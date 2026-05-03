@@ -22,7 +22,7 @@ engineer + Claude Code. Demo-first delivery. Six weeks to working demo.
 Eventual reuse target: Insurance, Healthcare, AECO verticals.
 
 ## Stack & Conventions
-- .NET 8, C# 12, ASP.NET Core minimal APIs
+- .NET 10, C# 14, ASP.NET Core minimal APIs
 - Clean Architecture per service: Api / Application / Domain / Infrastructure
 - CQRS via MediatR for command/query separation
 - EF Core for migrations and writes; Dapper for read-heavy queries
