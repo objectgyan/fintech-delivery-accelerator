@@ -1,11 +1,11 @@
 # CLAUDE.md - FinTech Delivery Accelerator
 
 ## Current Phase
-**Phase 0 - Foundation Setup**
+**Phase 1 — Thin Vertical Slice**
 
-We are establishing the deployment pipeline and cloud infrastructure.
+We are building the payment service end-to-end: skeleton → DB → authorize endpoint → event publish → notification.
 Do NOT add: outbox, idempotency, OpenTelemetry, fraud, retries, structured
-logging, or any Phase 1+ patterns yet.
+logging, or any Phase 2+ patterns yet.
 
 ## Complexity Guardrail
 Before adding any new component, answer:
@@ -61,3 +61,8 @@ Eventual reuse target: Insurance, Healthcare, AECO verticals.
 - When unsure, ask in chat before writing speculative code
 - Trailer commits with: Co-authored-by: claude-code[bot]
 - Never log secrets, card-like data, or raw stack traces
+
+## Branch Workflow
+- Every ticket gets its own feature branch before any files are touched
+- Branch name comes from the Linear issue's `gitBranchName` field exactly
+- Never commit directly to `main`

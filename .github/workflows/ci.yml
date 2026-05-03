@@ -8,7 +8,8 @@ on:
 
 env:
   REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
-  IMAGE_NAME: placeholder
+  PLACEHOLDER_IMAGE: placeholder
+  PAYMENT_IMAGE: payment
 
 jobs:
   build-and-test:
@@ -27,11 +28,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Restore
+      - name: Restore — placeholder
         run: dotnet restore services/placeholder/Placeholder/Placeholder.csproj
 
-      - name: Build
+      - name: Build — placeholder
         run: dotnet build services/placeholder/Placeholder/Placeholder.csproj -c Release --no-restore
+
+      - name: Restore — payment
+        run: dotnet restore services/payment/Payment.Api/Payment.Api.csproj
+
+      - name: Build — payment
+        run: dotnet build services/payment/Payment.Api/Payment.Api.csproj -c Release --no-restore
 
       - name: Test
         run: dotnet test --no-build --verbosity normal || echo "No tests yet"
@@ -48,11 +55,20 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: az acr login --name ${{ secrets.ACR_NAME }}
 
-      - name: Docker Build & Push
+      - name: Docker Build & Push — placeholder
         if: github.ref == 'refs/heads/main'
         run: |
-          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-                       -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          docker build -t ${{ env.REGISTRY }}/${{ env.PLACEHOLDER_IMAGE }}:${{ github.sha }} \
+                       -t ${{ env.REGISTRY }}/${{ env.PLACEHOLDER_IMAGE }}:latest \
                        services/placeholder
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.PLACEHOLDER_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.PLACEHOLDER_IMAGE }}:latest
+
+      - name: Docker Build & Push — payment
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:${{ github.sha }} \
+                       -t ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:latest \
+                       services/payment
+          docker push ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:latest
