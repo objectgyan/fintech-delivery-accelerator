@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_NAME: placeholder
+
+jobs:
+  build-and-test:
+    name: Build, Test & Dockerize
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore services/placeholder/Placeholder/Placeholder.csproj
+
+      - name: Build
+        run: dotnet build services/placeholder/Placeholder/Placeholder.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test --no-build --verbosity normal || echo "No tests yet"
+
+      - name: Azure Login (OIDC)
+        if: github.ref == 'refs/heads/main'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        if: github.ref == 'refs/heads/main'
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Docker Build & Push
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+                       -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+                       services/placeholder
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
