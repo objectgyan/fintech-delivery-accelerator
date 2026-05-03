@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Payment.Api.Contracts;
 using Payment.Application.Commands.CreatePayment;
+using Payment.Application.Exceptions;
 
 namespace Payment.Api.Endpoints;
 
@@ -16,7 +17,9 @@ public static class PaymentEndpoints
             .WithName("CreatePayment")
             .WithSummary("Initiate a payment")
             .Produces<CreatePaymentResponse>(StatusCodes.Status201Created)
-            .ProducesValidationProblem();
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> CreatePayment(
@@ -36,15 +39,26 @@ public static class PaymentEndpoints
         if (!validation.IsValid)
             return Results.ValidationProblem(validation.ToDictionary());
 
-        var result = await sender.Send(command, cancellationToken);
+        try
+        {
+            var result = await sender.Send(command, cancellationToken);
 
-        return Results.Created(
-            $"/payments/{result.PaymentId}",
-            new CreatePaymentResponse(
-                result.PaymentId,
-                result.Status,
-                result.Provider,
-                result.ProviderReference,
-                result.CreatedAtUtc));
+            return Results.Created(
+                $"/payments/{result.PaymentId}",
+                new CreatePaymentResponse(
+                    result.PaymentId,
+                    result.Status,
+                    result.Provider,
+                    result.ProviderReference,
+                    result.CreatedAtUtc));
+        }
+        catch (PaymentProviderException ex)
+        {
+            return Results.Problem(
+                title: ex.IsTransient ? "Payment provider temporarily unavailable" : "Payment declined",
+                detail: ex.Message,
+                statusCode: ex.IsTransient ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status402PaymentRequired,
+                extensions: new Dictionary<string, object?> { ["code"] = ex.ErrorCode });
+        }
     }
 }

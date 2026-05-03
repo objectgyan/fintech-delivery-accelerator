@@ -1,5 +1,11 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Payment.Application.Providers;
+using Payment.Domain.Repositories;
+using Payment.Infrastructure.Data;
+using Payment.Infrastructure.Providers;
+using Payment.Infrastructure.Repositories;
 
 namespace Payment.Infrastructure;
 
@@ -9,9 +15,12 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // EF Core DbContext wired in FT-102
-        // Azure Service Bus wired in FT-103
-        // Stripe client wired in FT-104
+        services.AddDbContext<PaymentDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("Payments")));
+
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<IPaymentProvider, StripePaymentProvider>();
+
         return services;
     }
 }
