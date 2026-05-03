@@ -3,6 +3,7 @@ using Notification.Worker.Workers;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+builder.Services.AddApplicationInsightsTelemetryWorkerService();
 builder.Services.Configure<ServiceBusOptions>(
     builder.Configuration.GetSection("ServiceBus"));
 

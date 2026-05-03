@@ -3,6 +3,11 @@ param location string
 param environmentId string
 param containerImage string
 param tags object
+param envVars array = []
+param ingressExternal bool = true
+param targetPort int = 8080
+param minReplicas int = 0
+param maxReplicas int = 3
 
 resource app 'Microsoft.App/containerApps@2023-11-02-preview' = {
   name: name
@@ -12,8 +17,8 @@ resource app 'Microsoft.App/containerApps@2023-11-02-preview' = {
     managedEnvironmentId: environmentId
     configuration: {
       ingress: {
-        external: true
-        targetPort: 8080
+        external: ingressExternal
+        targetPort: targetPort
         transport: 'auto'
       }
     }
@@ -26,11 +31,12 @@ resource app 'Microsoft.App/containerApps@2023-11-02-preview' = {
             cpu: json('0.25')
             memory: '0.5Gi'
           }
+          env: envVars
         }
       ]
       scale: {
-        minReplicas: 0
-        maxReplicas: 3
+        minReplicas: minReplicas
+        maxReplicas: maxReplicas
       }
     }
   }

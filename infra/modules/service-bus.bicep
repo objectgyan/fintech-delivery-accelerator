@@ -12,9 +12,18 @@ resource namespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   }
 }
 
-resource paymentsQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+resource paymentAuthorizedTopic 'Microsoft.ServiceBus/namespaces/topics@2022-10-01-preview' = {
   parent: namespace
   name: 'payment-authorized'
+  properties: {
+    maxSizeInMegabytes: 1024
+    defaultMessageTimeToLive: 'P7D'
+  }
+}
+
+resource notificationSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2022-10-01-preview' = {
+  parent: paymentAuthorizedTopic
+  name: 'notification'
   properties: {
     maxDeliveryCount: 5
     lockDuration: 'PT1M'
@@ -24,3 +33,4 @@ resource paymentsQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-previe
 
 output namespaceName string = namespace.name
 output namespaceId string = namespace.id
+output topicName string = paymentAuthorizedTopic.name
