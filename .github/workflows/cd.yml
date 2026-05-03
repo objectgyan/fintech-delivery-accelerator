@@ -29,6 +29,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Install containerapp extension
+        run: az extension add --name containerapp --upgrade --yes
+
       - name: Deploy to ACA
         run: |
           az containerapp update \
