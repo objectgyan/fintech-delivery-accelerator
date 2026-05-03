@@ -26,14 +26,18 @@ public static class PaymentEndpoints
         [FromBody] CreatePaymentRequest request,
         IValidator<CreatePaymentCommand> validator,
         ISender sender,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        var traceId = httpContext.TraceIdentifier;
+
         var command = new CreatePaymentCommand(
             request.Amount,
             request.Currency,
             request.CustomerEmail,
             request.PaymentMethodToken,
-            request.Description);
+            request.Description,
+            TraceId: traceId);
 
         var validation = await validator.ValidateAsync(command, cancellationToken);
         if (!validation.IsValid)
