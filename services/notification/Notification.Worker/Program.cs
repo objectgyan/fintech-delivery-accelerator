@@ -1,0 +1,17 @@
+using Azure.Messaging.ServiceBus;
+using Notification.Worker.Workers;
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.Configure<ServiceBusOptions>(
+    builder.Configuration.GetSection("ServiceBus"));
+
+var sbConnectionString = builder.Configuration["ServiceBus:ConnectionString"];
+if (string.IsNullOrWhiteSpace(sbConnectionString))
+    throw new InvalidOperationException("ServiceBus:ConnectionString is required.");
+
+builder.Services.AddSingleton(new ServiceBusClient(sbConnectionString));
+builder.Services.AddHostedService<PaymentAuthorizedConsumer>();
+
+var host = builder.Build();
+host.Run();
