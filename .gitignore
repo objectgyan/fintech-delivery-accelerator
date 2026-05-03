@@ -48,6 +48,9 @@ lcov.info
 ## Terraform / Bicep params with secrets
 infra/parameters/*.local.bicepparam
 
+## Bicep compiled output
+infra/main.json
+
 ## Logs
 *.log
 logs/
