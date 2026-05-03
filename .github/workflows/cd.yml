@@ -34,6 +34,11 @@ jobs:
 
       - name: Deploy to ACA
         run: |
+          az containerapp registry set \
+            --name ${{ env.ACA_APP_NAME }} \
+            --resource-group ${{ env.ACA_RESOURCE_GROUP }} \
+            --server ${{ env.REGISTRY }} \
+            --identity system
           az containerapp update \
             --name ${{ env.ACA_APP_NAME }} \
             --resource-group ${{ env.ACA_RESOURCE_GROUP }} \
