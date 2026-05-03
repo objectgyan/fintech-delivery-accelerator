@@ -7,5 +7,6 @@ public sealed record CreatePaymentCommand(
     string Currency,
     string CustomerEmail,
     string PaymentMethodToken,
-    string? Description
+    string? Description,
+    string? TraceId = null
 ) : IRequest<CreatePaymentResult>;

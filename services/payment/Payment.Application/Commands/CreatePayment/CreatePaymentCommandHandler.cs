@@ -1,4 +1,5 @@
 using MediatR;
+using Payment.Application.Events;
 using Payment.Application.Exceptions;
 using Payment.Application.Providers;
 using Payment.Domain.Repositories;
@@ -9,11 +10,16 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 {
     private readonly IPaymentProvider _provider;
     private readonly IPaymentRepository _repository;
+    private readonly IEventPublisher _eventPublisher;
 
-    public CreatePaymentCommandHandler(IPaymentProvider provider, IPaymentRepository repository)
+    public CreatePaymentCommandHandler(
+        IPaymentProvider provider,
+        IPaymentRepository repository,
+        IEventPublisher eventPublisher)
     {
         _provider = provider;
         _repository = repository;
+        _eventPublisher = eventPublisher;
     }
 
     public async Task<CreatePaymentResult> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -32,6 +38,16 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         payment.Authorize(providerResult.ProviderReference!);
 
         await _repository.AddAsync(payment, cancellationToken);
+
+        // TODO: Phase 2 replaces direct publish with outbox (FT-205)
+        var evt = PaymentAuthorizedEvent.From(
+            paymentId: payment.Id,
+            amount: payment.Amount,
+            currency: payment.Currency,
+            customerEmail: payment.CustomerEmail,
+            traceId: request.TraceId ?? string.Empty);
+
+        await _eventPublisher.PublishAsync(evt, cancellationToken);
 
         return new CreatePaymentResult(
             PaymentId: payment.Id,
