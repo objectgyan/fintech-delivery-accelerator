@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Payment.Api.Endpoints;
 using Payment.Application;
 using Payment.Infrastructure;
+using Payment.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,12 @@ builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+
+// Apply EF migrations automatically on startup
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<PaymentDbContext>().Database.Migrate();
+}
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
