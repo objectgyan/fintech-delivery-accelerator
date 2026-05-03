@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "payment-authorized-v1",
+  "title": "PaymentAuthorized.v1",
+  "description": "Published to Service Bus queue 'payment-authorized' after a payment is successfully authorised by the provider.",
+
+  "versioning": {
+    "current": "v1",
+    "rules": [
+      "Additive fields (new optional properties) are allowed within v1 — consumers must ignore unknown fields.",
+      "Removing, renaming, or changing the meaning of any existing field requires a new version (v2).",
+      "Breaking changes must be published under a new eventType value (e.g. PaymentAuthorized.v2) and the old type retired after a migration window."
+    ]
+  },
+
+  "sample": {
+    "eventId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "eventType": "PaymentAuthorized.v1",
+    "occurredAtUtc": "2026-05-02T12:00:00Z",
+    "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    "paymentId": "928165c0-53e0-4550-a5d8-d96d18e42840",
+    "amount": 125.50,
+    "currency": "CAD",
+    "customerEmail": "demo@example.com",
+    "status": "authorized"
+  },
+
+  "type": "object",
+  "required": ["eventId", "eventType", "occurredAtUtc", "traceId", "paymentId", "amount", "currency", "customerEmail", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "eventId":       { "type": "string", "format": "uuid",     "description": "Unique identifier for this event envelope. Used for deduplication." },
+    "eventType":     { "type": "string", "const": "PaymentAuthorized.v1" },
+    "occurredAtUtc": { "type": "string", "format": "date-time", "description": "When the authorisation occurred (UTC)." },
+    "traceId":       { "type": "string", "description": "W3C TraceContext trace-id for distributed tracing." },
+    "paymentId":     { "type": "string", "format": "uuid",     "description": "Internal payment ID (Payments.Id)." },
+    "amount":        { "type": "number", "exclusiveMinimum": 0 },
+    "currency":      { "type": "string", "pattern": "^[A-Z]{3}$", "description": "ISO 4217 currency code." },
+    "customerEmail": { "type": "string", "format": "email" },
+    "status":        { "type": "string", "const": "authorized" }
+  }
+}
