@@ -1,11 +1,10 @@
 # CLAUDE.md - FinTech Delivery Accelerator
 
 ## Current Phase
-**Phase 1 — Thin Vertical Slice**
+**Phase 2 — Reliability**
 
-We are building the payment service end-to-end: skeleton → DB → authorize endpoint → event publish → notification.
-Do NOT add: outbox, idempotency, OpenTelemetry, fraud, retries, structured
-logging, or any Phase 2+ patterns yet.
+We are adding reliability patterns to the payment service: transactional outbox, idempotency keys, payment attempt tracking, retry, and circuit breaker.
+Do NOT add: OpenTelemetry, fraud scoring, email notifications, or any Phase 3+ patterns yet.
 
 ## Complexity Guardrail
 Before adding any new component, answer:

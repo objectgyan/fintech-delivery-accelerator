@@ -7,6 +7,7 @@
     Runs all validation scenarios against a locally running Payment.Api instance:
       1. Health check
       2. Happy path (pm_card_visa) — verifies 201 + SQL row
+      2c. Second consecutive payment — verifies singleton ServiceBusClient is not disposed between requests
       3. Declined card (pm_card_chargeDeclined) — verifies 402
       4. Invalid request body — verifies 400 + validation errors
 
@@ -114,6 +115,28 @@ if (-not $hasSql) {
     } catch {
         Write-Fail "SQL error: $_"
     }
+}
+
+# ── TEST 2c: Second consecutive payment (guards against singleton dispose bug) ─
+Write-Section "TEST 2c: POST /payments (second consecutive) → 201"
+try {
+    $body = @{
+        amount             = 25.00
+        currency           = "USD"
+        customerEmail      = "validate2@example.com"
+        paymentMethodToken = "pm_card_visa"
+        description        = "Consecutive payment test"
+    } | ConvertTo-Json
+
+    $r = Invoke-RestMethod -Uri "$BaseUrl/payments" -Method POST -ContentType "application/json" -Body $body -TimeoutSec 60
+    if ($r.status -eq "authorized" -and $r.providerReference -like "pi_*") {
+        Write-Pass "Second payment succeeded — paymentId=$($r.paymentId)  ref=$($r.providerReference)"
+    } else {
+        Write-Fail "Unexpected response: $($r | ConvertTo-Json -Compress)"
+    }
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    Write-Fail "HTTP $code — $($_.ErrorDetails.Message) (ServiceBusClient may have been disposed after first request)"
 }
 
 # ── TEST 3: Declined card → 402 ───────────────────────────────────────────────
