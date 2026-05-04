@@ -8,9 +8,7 @@ on:
 
 env:
   REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
-  IMAGE_NAME: placeholder
-  ACA_APP_NAME: ${{ secrets.ACA_APP_NAME }}
-  ACA_RESOURCE_GROUP: ${{ secrets.ACA_RESOURCE_GROUP }}
+  RESOURCE_GROUP: ${{ secrets.ACA_RESOURCE_GROUP }}
 
 jobs:
   deploy:
@@ -32,21 +30,48 @@ jobs:
       - name: Install containerapp extension
         run: az extension add --name containerapp --upgrade --yes
 
-      - name: Deploy to ACA
+      - name: Deploy payment service
         run: |
-          az containerapp registry set \
-            --name ${{ env.ACA_APP_NAME }} \
-            --resource-group ${{ env.ACA_RESOURCE_GROUP }} \
-            --server ${{ env.REGISTRY }} \
-            --identity system
+          az containerapp secret set \
+            --name ${{ secrets.ACA_PAYMENT_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets \
+              "sb-connection-string=${{ secrets.PAYMENT_SB_CONNECTION_STRING }}" \
+              "sql-connection-string=${{ secrets.PAYMENT_SQL_CONNECTION_STRING }}" \
+              "stripe-secret-key=${{ secrets.PAYMENT_STRIPE_SECRET_KEY }}"
           az containerapp update \
-            --name ${{ env.ACA_APP_NAME }} \
-            --resource-group ${{ env.ACA_RESOURCE_GROUP }} \
-            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
+            --name ${{ secrets.ACA_PAYMENT_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/payment:${{ github.event.workflow_run.head_sha }} \
+            --set-env-vars \
+              "ServiceBus__ConnectionString=secretref:sb-connection-string" \
+              "ConnectionStrings__Payments=secretref:sql-connection-string" \
+              "Stripe__SecretKey=secretref:stripe-secret-key"
 
-      - name: Verify revision
+      - name: Deploy notification worker
+        run: |
+          az containerapp secret set \
+            --name ${{ secrets.ACA_NOTIFICATION_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets \
+              "sb-connection-string=${{ secrets.PAYMENT_SB_CONNECTION_STRING }}"
+          az containerapp update \
+            --name ${{ secrets.ACA_NOTIFICATION_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/notification:${{ github.event.workflow_run.head_sha }} \
+            --set-env-vars \
+              "ServiceBus__ConnectionString=secretref:sb-connection-string"
+
+      - name: Verify payment revision
         run: |
           az containerapp revision list \
-            --name ${{ env.ACA_APP_NAME }} \
-            --resource-group ${{ env.ACA_RESOURCE_GROUP }} \
+            --name ${{ secrets.ACA_PAYMENT_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --output table
+
+      - name: Verify notification revision
+        run: |
+          az containerapp revision list \
+            --name ${{ secrets.ACA_NOTIFICATION_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
             --output table

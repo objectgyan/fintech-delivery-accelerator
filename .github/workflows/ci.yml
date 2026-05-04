@@ -10,6 +10,7 @@ env:
   REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
   PLACEHOLDER_IMAGE: placeholder
   PAYMENT_IMAGE: payment
+  NOTIFICATION_IMAGE: notification
 
 jobs:
   build-and-test:
@@ -39,6 +40,12 @@ jobs:
 
       - name: Build — payment
         run: dotnet build services/payment/Payment.Api/Payment.Api.csproj -c Release --no-restore
+
+      - name: Restore — notification
+        run: dotnet restore services/notification/Notification.Worker/Notification.Worker.csproj
+
+      - name: Build — notification
+        run: dotnet build services/notification/Notification.Worker/Notification.Worker.csproj -c Release --no-restore
 
       - name: Test
         run: dotnet test --no-build --verbosity normal || echo "No tests yet"
@@ -72,3 +79,12 @@ jobs:
                        services/payment
           docker push ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:${{ github.sha }}
           docker push ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:latest
+
+      - name: Docker Build & Push — notification
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:${{ github.sha }} \
+                       -t ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:latest \
+                       services/notification
+          docker push ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:latest

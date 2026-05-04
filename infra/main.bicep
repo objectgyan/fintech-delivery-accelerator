@@ -99,12 +99,54 @@ module acaApp 'modules/aca-app.bicep' = {
   }
 }
 
+module acaPayment 'modules/aca-app.bicep' = {
+  name: 'aca-payment'
+  scope: rg
+  params: {
+    name: '${projectPrefix}-${environment}-payment'
+    location: location
+    environmentId: acaEnv.outputs.environmentId
+    containerImage: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    ingressExternal: true
+    minReplicas: 0
+    maxReplicas: 3
+    tags: tags
+    envVars: [
+      { name: 'ASPNETCORE_HTTP_PORTS', value: '8080' }
+      { name: 'ServiceBus__TopicName', value: 'payment-authorized' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
+    ]
+  }
+}
+
+module acaNotification 'modules/aca-worker.bicep' = {
+  name: 'aca-notification'
+  scope: rg
+  params: {
+    name: '${projectPrefix}-${environment}-notification'
+    location: location
+    environmentId: acaEnv.outputs.environmentId
+    containerImage: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    minReplicas: 1
+    maxReplicas: 3
+    tags: tags
+    envVars: [
+      { name: 'ServiceBus__TopicName', value: 'payment-authorized' }
+      { name: 'ServiceBus__SubscriptionName', value: 'notification' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
+    ]
+  }
+}
+
 output resourceGroupName string = resourceGroupName
 output acrLoginServer string = acr.outputs.loginServer
 output acrName string = acr.outputs.name
 output acaAppName string = acaApp.outputs.appName
 output acaUrl string = acaApp.outputs.url
+output acaPaymentAppName string = acaPayment.outputs.appName
+output acaPaymentUrl string = acaPayment.outputs.url
+output acaNotificationAppName string = acaNotification.outputs.appName
 output appInsightsConnectionString string = appInsights.outputs.connectionString
 output keyVaultName string = keyVault.outputs.name
 output serviceBusNamespace string = serviceBus.outputs.namespaceName
-// SQL outputs added in Phase 1
+output serviceBusTopicName string = serviceBus.outputs.topicName
