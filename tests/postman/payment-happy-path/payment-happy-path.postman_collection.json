@@ -1,0 +1,137 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Phase 1 — Payment Happy Path",
+    "description": "End-to-end smoke tests for the Payment service. Set {{base_url}} to the ACA URL or http://localhost:5101 for local runs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://fintech-dev-payment.purplestone-2afd62bc.eastus.azurecontainerapps.io",
+      "type": "string"
+    },
+    {
+      "key": "last_payment_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "GET /health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "pm.test('status=ok', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('ok');",
+              "  pm.expect(body.service).to.eql('payment');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "POST /payments — happy path (Visa)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status 201', () => pm.response.to.have.status(201));",
+              "pm.test('response has paymentId', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.paymentId).to.be.a('string').and.to.have.lengthOf(36);",
+              "  pm.expect(body.status).to.eql('authorized');",
+              "  pm.expect(body.provider).to.eql('stripe');",
+              "  pm.expect(body.providerReference).to.match(/^pi_/);",
+              "  pm.collectionVariables.set('last_payment_id', body.paymentId);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 99.99,\n  \"currency\": \"USD\",\n  \"customerEmail\": \"demo@phase1test.com\",\n  \"paymentMethodToken\": \"pm_card_visa\",\n  \"description\": \"Phase 1 demo payment\"\n}"
+        },
+        "url": "{{base_url}}/payments"
+      }
+    },
+    {
+      "name": "POST /payments — declined card (402)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status 402', () => pm.response.to.have.status(402));",
+              "pm.test('error code is card_declined', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.error).to.eql('card_declined');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50.00,\n  \"currency\": \"USD\",\n  \"customerEmail\": \"demo@phase1test.com\",\n  \"paymentMethodToken\": \"pm_card_chargeDeclined\",\n  \"description\": \"Declined card test\"\n}"
+        },
+        "url": "{{base_url}}/payments"
+      }
+    },
+    {
+      "name": "POST /payments — invalid body (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('status 400', () => pm.response.to.have.status(400));",
+              "pm.test('response has validation errors', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.errors).to.be.an('object');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": -1,\n  \"currency\": \"xx\",\n  \"customerEmail\": \"not-an-email\"\n}"
+        },
+        "url": "{{base_url}}/payments"
+      }
+    }
+  ]
+}

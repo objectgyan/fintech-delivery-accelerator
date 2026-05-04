@@ -5,7 +5,7 @@ using Payment.Application.Events;
 
 namespace Payment.Infrastructure.Messaging;
 
-internal sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposable
+internal sealed class ServiceBusEventPublisher : IEventPublisher
 {
     private readonly ServiceBusClient _client;
     private readonly string _topicName;
@@ -45,6 +45,4 @@ internal sealed class ServiceBusEventPublisher : IEventPublisher, IAsyncDisposab
         await sender.SendMessageAsync(message, cancellationToken);
         _logger.LogInformation("Published {EventType} to {Topic}", message.Subject, _topicName);
     }
-
-    public async ValueTask DisposeAsync() => await _client.DisposeAsync();
 }

@@ -16,7 +16,7 @@ An end-to-end payment processing system demonstrating:
 
 ## Stack
 
-- **.NET 8** — ASP.NET Core minimal APIs, Clean Architecture per service
+- **.NET 10** — ASP.NET Core minimal APIs, Clean Architecture per service
 - **Azure Container Apps** — hosting
 - **Azure SQL** — persistence (EF Core + Dapper)
 - **Azure Service Bus** — event messaging
@@ -28,9 +28,9 @@ An end-to-end payment processing system demonstrating:
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 0 — Foundation | Repo, Azure, CI/CD, dummy service | 🔄 In progress |
-| 1 — Thin Vertical Slice | POST /payments → Stripe → SQL → Event → Notification | ⏳ |
-| 2 — Reliability | Outbox, idempotency, retry, circuit breaker | ⏳ |
+| 0 — Foundation | Repo, Azure, CI/CD, dummy service | ✅ Done |
+| 1 — Thin Vertical Slice | POST /payments → Stripe → SQL → Event → Notification | ✅ Done |
+| 2 — Reliability | Outbox, idempotency, retry, circuit breaker | 🔄 In progress |
 | 3 — Real System Feel | Fraud, email, OpenTelemetry | ⏳ |
 | 4 — Enterprise Hardening | Managed identity, private endpoints, blue-green (optional) | ⏳ |
 
