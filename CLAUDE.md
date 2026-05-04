@@ -45,6 +45,7 @@ Eventual reuse target: Insurance, Healthcare, AECO verticals.
 - Deploy to active environment succeeds for deployable changes
 - Evidence posted to Linear (output, screenshot, trace ID, log)
 - Engineer verifies evidence before marking Done
+- **README architecture diagrams updated** if this ticket adds/changes a service, table, infra resource, or data flow
 
 ## Ask Before Doing
 - Database migrations beyond simple table creation
