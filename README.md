@@ -36,6 +36,103 @@ An end-to-end payment processing system demonstrating:
 
 ---
 
+## Architecture
+
+### System Overview
+
+```mermaid
+flowchart TB
+    subgraph ext["External"]
+        Client(["Client\nPostman / App"])
+        Stripe(["Stripe\nPayment Provider\nsandbox"])
+    end
+
+    subgraph cicd["CI/CD — GitHub Actions"]
+        CI["CI\nbuild · test · docker push\non every push to main"]
+        CD["CD\naz containerapp update\ntriggered after CI passes"]
+        CI --> CD
+    end
+
+    subgraph azure["Azure — fintech-dev-rg · East US"]
+        ACR[("Container Registry\nfintechdevacr\nBasic SKU")]
+
+        subgraph aca["ACA Environment — fintech-dev-aca-env"]
+            PayAPI["Payment API\n────────────────\nASP.NET Core Minimal API\nClean Architecture\nMediatR · EF Core · FluentValidation\nPort 8080 · public ingress"]
+            NotifW["Notification Worker\n────────────────\nBackgroundService\nService Bus consumer\nno public ingress"]
+        end
+
+        subgraph store["Data & Messaging"]
+            SQL[("Azure SQL\nfintech-payments\nServerless · auto-pause 60 min\nWest US 2")]
+            SB[("Service Bus\nfintech-dev-bus · Standard\ntopic: payment-authorized\nsubscription: notification")]
+        end
+
+        subgraph obs["Observability & Security"]
+            AI["Application Insights\nfintech-dev-ai\nbacked by Log Analytics"]
+            KV["Key Vault\nfintech-dev-kv\nRBAC mode\nactive from Phase 4"]
+        end
+    end
+
+    Client -->|"POST /payments\nHTTPS"| PayAPI
+    PayAPI <-->|"PaymentIntent\ncreate + confirm"| Stripe
+    PayAPI -->|"EF Core write\nPayments table"| SQL
+    PayAPI -->|"PaymentAuthorized.v1\njson event"| SB
+    SB -->|"consume\nsubscription"| NotifW
+    PayAPI -->|"request traces\nexceptions · metrics"| AI
+    NotifW -->|"consumer logs\ntraces"| AI
+    CI -->|"az acr build\ncloud-side Docker build"| ACR
+    ACR -.->|"AcrPull\nsystem-assigned\nmanaged identity"| PayAPI
+    ACR -.->|"AcrPull\nsystem-assigned\nmanaged identity"| NotifW
+    CD -->|"new revision"| PayAPI
+    CD -->|"new revision"| NotifW
+```
+
+> **Key design decisions**
+> - ACA scale-to-zero for Payment API (min=0) — cost-saving for dev; Notification Worker stays at min=1 to never miss messages
+> - Service Bus **Standard SKU** — minimum required for topics + subscriptions (Basic only has queues)
+> - ACR auth via managed identity — no stored passwords anywhere in the pipeline
+> - Azure SQL **Serverless** — auto-pauses after 60 min idle; expect 30-60 s cold-start on first connection
+> - All secrets injected at runtime via ACA secret refs — never baked into images
+
+---
+
+### Phase 2 — Reliability Pattern (in progress)
+
+Phase 1 publishes events directly inside the command handler — if the Service Bus call fails after the SQL write, the event is silently lost. Phase 2 replaces this with the **transactional outbox pattern**.
+
+```mermaid
+flowchart LR
+    subgraph handler["Command Handler\nsame DB transaction"]
+        W1["Write Payment\nto Payments table"]
+        W2["Write event\nto OutboxMessages table\nStatus=Pending"]
+        W1 --> W2
+    end
+
+    subgraph relay["Outbox Relay\nBackgroundService"]
+        R1["Poll OutboxMessages\nWHERE Status=Pending"]
+        R2["Publish to\nService Bus"]
+        R3["Mark\nStatus=Published"]
+        R1 --> R2 --> R3
+    end
+
+    subgraph resilience["Stripe Resilience\nPolly v8"]
+        P1["Retry\n3x on transient errors\nexponential backoff"]
+        P2["Circuit Breaker\nopen after 5 failures\n30 s reset"]
+    end
+
+    Client -->|"POST /payments\n+ Idempotency-Key header"| IdempCheck
+    IdempCheck{"Idempotency\ncheck\nIdempotencyKeys\ntable"} -->|"duplicate"| CachedResp["Return cached\nresponse 200"]
+    IdempCheck -->|"new request"| handler
+    handler -->|"authorize"| resilience
+    handler -->|"commit"| SQL[("Azure SQL")]
+    relay -->|"read"| SQL
+    relay -->|"publish"| SB[("Service Bus")]
+    SB -->|"consume"| NotifW["Notification\nWorker"]
+```
+
+> **What this buys**: event delivery is now atomic with the payment write — a Service Bus outage or crash between publish and commit can no longer lose an event. Idempotency keys prevent duplicate charges on client retries.
+
+---
+
 ## Phase 0 — Foundation ✅
 
 **Goal:** Repo structure, Azure baseline, CI/CD pipeline, placeholder service.
