@@ -54,4 +54,12 @@ public sealed class PaymentRepository : IPaymentRepository
         _context.OutboxMessages.Update(message);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task CompletePaymentAsync(Payment.Domain.Entities.Payment payment, PaymentAttempt attempt, OutboxMessage outboxMessage, CancellationToken cancellationToken = default)
+    {
+        _context.Payments.Update(payment);
+        await _context.PaymentAttempts.AddAsync(attempt, cancellationToken);
+        await _context.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

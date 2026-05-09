@@ -12,4 +12,5 @@ public interface IPaymentRepository
     Task AddOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default);
     Task<List<OutboxMessage>> GetPendingOutboxMessagesAsync(int batchSize, CancellationToken cancellationToken = default);
     Task UpdateOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default);
+    Task CompletePaymentAsync(PaymentEntity payment, PaymentAttempt attempt, OutboxMessage outboxMessage, CancellationToken cancellationToken = default);
 }

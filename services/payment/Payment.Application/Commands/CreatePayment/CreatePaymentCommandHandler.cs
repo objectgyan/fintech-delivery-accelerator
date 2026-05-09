@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MediatR;
 using Payment.Application.Events;
 using Payment.Application.Exceptions;
@@ -11,23 +12,20 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 {
     private readonly IPaymentProvider _provider;
     private readonly IPaymentRepository _repository;
-    private readonly IEventPublisher _eventPublisher;
 
-    public CreatePaymentCommandHandler(
-        IPaymentProvider provider,
-        IPaymentRepository repository,
-        IEventPublisher eventPublisher)
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    public CreatePaymentCommandHandler(IPaymentProvider provider, IPaymentRepository repository)
     {
         _provider = provider;
         _repository = repository;
-        _eventPublisher = eventPublisher;
     }
 
     public async Task<CreatePaymentResult> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
     {
         var payment = Domain.Entities.Payment.Create(request.Amount, request.Currency, request.CustomerEmail);
 
-        // Save as Pending before calling provider so the FK from PaymentAttempts is valid
+        // Save as Pending first so PaymentAttempts FK is valid
         await _repository.AddAsync(payment, cancellationToken);
 
         var attempt = PaymentAttempt.Start(payment.Id, attemptNo: 1, provider: "stripe");
@@ -49,10 +47,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 
         payment.Authorize(providerResult.ProviderReference!);
         attempt.Succeed();
-        await _repository.UpdateAsync(payment, cancellationToken);
-        await _repository.AddAttemptAsync(attempt, cancellationToken);
 
-        // TODO: Phase 2 replaces direct publish with outbox (FT-205)
         var evt = PaymentAuthorizedEvent.From(
             paymentId: payment.Id,
             amount: payment.Amount,
@@ -60,7 +55,12 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             customerEmail: payment.CustomerEmail,
             traceId: request.TraceId ?? string.Empty);
 
-        await _eventPublisher.PublishAsync(evt, cancellationToken);
+        var outboxMessage = OutboxMessage.Create(
+            eventType: evt.EventType,
+            payloadJson: JsonSerializer.Serialize(evt, JsonOptions));
+
+        // Authorized payment + attempt + outbox row committed in one transaction
+        await _repository.CompletePaymentAsync(payment, attempt, outboxMessage, cancellationToken);
 
         return new CreatePaymentResult(
             PaymentId: payment.Id,
