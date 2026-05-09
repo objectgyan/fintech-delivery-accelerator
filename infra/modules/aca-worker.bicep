@@ -4,7 +4,7 @@ param environmentId string
 param containerImage string
 param tags object
 param envVars array = []
-param minReplicas int = 1
+param minReplicas int = 0
 param maxReplicas int = 3
 
 resource app 'Microsoft.App/containerApps@2023-11-02-preview' = {

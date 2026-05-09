@@ -127,7 +127,7 @@ module acaNotification 'modules/aca-worker.bicep' = {
     location: location
     environmentId: acaEnv.outputs.environmentId
     containerImage: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
-    minReplicas: 1
+    minReplicas: 0
     maxReplicas: 3
     tags: tags
     envVars: [
