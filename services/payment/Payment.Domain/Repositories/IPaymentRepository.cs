@@ -13,4 +13,8 @@ public interface IPaymentRepository
     Task<List<OutboxMessage>> GetPendingOutboxMessagesAsync(int batchSize, CancellationToken cancellationToken = default);
     Task UpdateOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default);
     Task CompletePaymentAsync(PaymentEntity payment, PaymentAttempt attempt, OutboxMessage outboxMessage, CancellationToken cancellationToken = default);
+    Task<IdempotencyKey?> GetIdempotencyKeyAsync(string key, CancellationToken cancellationToken = default);
+    Task AddIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default);
+    Task UpdateIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default);
+    Task CompleteWithIdempotencyAsync(PaymentEntity payment, PaymentAttempt attempt, OutboxMessage outboxMessage, IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default);
 }

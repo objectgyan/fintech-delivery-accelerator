@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Payment.Api.Contracts;
 using Payment.Application.Commands.CreatePayment;
 using Payment.Application.Exceptions;
+using Payment.Domain.Entities;
+using Payment.Domain.Repositories;
 
 namespace Payment.Api.Endpoints;
 
@@ -25,6 +27,7 @@ public static class PaymentEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
@@ -32,10 +35,10 @@ public static class PaymentEndpoints
         [FromBody] CreatePaymentRequest request,
         IValidator<CreatePaymentCommand> validator,
         ISender sender,
+        IPaymentRepository repository,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        // Idempotency-Key header is required from Phase 2 onwards
         if (!httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyKeyHeader)
             || string.IsNullOrWhiteSpace(idempotencyKeyHeader))
         {
@@ -57,6 +60,36 @@ public static class PaymentEndpoints
         var requestJson = JsonSerializer.Serialize(request, JsonOptions);
         var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(requestJson))).ToLowerInvariant();
 
+        // Idempotency dedup check
+        var existing = await repository.GetIdempotencyKeyAsync(idempotencyKey, cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.RequestHash != requestHash)
+            {
+                return Results.Problem(
+                    title: "Idempotency key reuse with different request body",
+                    detail: "The provided Idempotency-Key was already used with a different request payload.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            // Same key + same hash — return cached response
+            if (existing.ResponseJson is not null)
+            {
+                var cached = JsonSerializer.Deserialize<CreatePaymentResponse>(existing.ResponseJson, JsonOptions);
+                return Results.Created($"/payments/{cached!.PaymentId}", cached);
+            }
+
+            // Key exists but not yet completed (concurrent request) — treat as conflict
+            return Results.Problem(
+                title: "Payment already in progress",
+                detail: "A payment with this Idempotency-Key is already being processed.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        // Reserve the key before processing so concurrent duplicates get 409
+        var idempotencyKeyEntity = IdempotencyKey.Create(idempotencyKey, requestHash);
+        await repository.AddIdempotencyKeyAsync(idempotencyKeyEntity, cancellationToken);
+
         var command = new CreatePaymentCommand(
             request.Amount,
             request.Currency,
@@ -65,7 +98,8 @@ public static class PaymentEndpoints
             request.Description,
             TraceId: httpContext.TraceIdentifier,
             IdempotencyKey: idempotencyKey,
-            RequestHash: requestHash);
+            RequestHash: requestHash,
+            IdempotencyKeyEntity: idempotencyKeyEntity);
 
         var validation = await validator.ValidateAsync(command, cancellationToken);
         if (!validation.IsValid)

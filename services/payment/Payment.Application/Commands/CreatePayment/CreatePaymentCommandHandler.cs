@@ -59,15 +59,27 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             eventType: evt.EventType,
             payloadJson: JsonSerializer.Serialize(evt, JsonOptions));
 
-        // Authorized payment + attempt + outbox row committed in one transaction
-        await _repository.CompletePaymentAsync(payment, attempt, outboxMessage, cancellationToken);
-
-        return new CreatePaymentResult(
+        var result = new CreatePaymentResult(
             PaymentId: payment.Id,
             Status: payment.Status.ToString().ToLowerInvariant(),
             Provider: payment.Provider,
             ProviderReference: payment.ProviderReference,
-            CreatedAtUtc: payment.CreatedAtUtc
-        );
+            CreatedAtUtc: payment.CreatedAtUtc);
+
+        if (request.IdempotencyKeyEntity is { } idempotencyKey)
+        {
+            idempotencyKey.Complete(
+                paymentId: payment.Id,
+                responseJson: JsonSerializer.Serialize(result, JsonOptions),
+                statusCode: 201);
+            // Payment + attempt + outbox + idempotency key committed in one transaction
+            await _repository.CompleteWithIdempotencyAsync(payment, attempt, outboxMessage, idempotencyKey, cancellationToken);
+        }
+        else
+        {
+            await _repository.CompletePaymentAsync(payment, attempt, outboxMessage, cancellationToken);
+        }
+
+        return result;
     }
 }
