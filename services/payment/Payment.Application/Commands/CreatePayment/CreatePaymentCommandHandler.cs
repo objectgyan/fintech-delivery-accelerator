@@ -2,6 +2,7 @@ using MediatR;
 using Payment.Application.Events;
 using Payment.Application.Exceptions;
 using Payment.Application.Providers;
+using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
 
 namespace Payment.Application.Commands.CreatePayment;
@@ -26,6 +27,11 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     {
         var payment = Domain.Entities.Payment.Create(request.Amount, request.Currency, request.CustomerEmail);
 
+        // Save as Pending before calling provider so the FK from PaymentAttempts is valid
+        await _repository.AddAsync(payment, cancellationToken);
+
+        var attempt = PaymentAttempt.Start(payment.Id, attemptNo: 1, provider: "stripe");
+
         var providerResult = await _provider.AuthorizeAsync(
             request.Amount,
             request.Currency,
@@ -33,11 +39,18 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             cancellationToken);
 
         if (!providerResult.Success)
+        {
+            payment.Fail();
+            attempt.Fail(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
+            await _repository.UpdateAsync(payment, cancellationToken);
+            await _repository.AddAttemptAsync(attempt, cancellationToken);
             throw new PaymentProviderException(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
+        }
 
         payment.Authorize(providerResult.ProviderReference!);
-
-        await _repository.AddAsync(payment, cancellationToken);
+        attempt.Succeed();
+        await _repository.UpdateAsync(payment, cancellationToken);
+        await _repository.AddAttemptAsync(attempt, cancellationToken);
 
         // TODO: Phase 2 replaces direct publish with outbox (FT-205)
         var evt = PaymentAuthorizedEvent.From(
