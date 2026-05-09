@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
 using Payment.Infrastructure.Data;
+using PaymentEntity = Payment.Domain.Entities.Payment;
 
 namespace Payment.Infrastructure.Repositories;
 
@@ -55,11 +56,38 @@ public sealed class PaymentRepository : IPaymentRepository
         await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task CompletePaymentAsync(Payment.Domain.Entities.Payment payment, PaymentAttempt attempt, OutboxMessage outboxMessage, CancellationToken cancellationToken = default)
+    public async Task CompletePaymentAsync(PaymentEntity payment, PaymentAttempt attempt, OutboxMessage outboxMessage, CancellationToken cancellationToken = default)
     {
         _context.Payments.Update(payment);
         await _context.PaymentAttempts.AddAsync(attempt, cancellationToken);
         await _context.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IdempotencyKey?> GetIdempotencyKeyAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return await _context.IdempotencyKeys
+            .FirstOrDefaultAsync(k => k.Key == key, cancellationToken);
+    }
+
+    public async Task AddIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        await _context.IdempotencyKeys.AddAsync(idempotencyKey, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        _context.IdempotencyKeys.Update(idempotencyKey);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task CompleteWithIdempotencyAsync(PaymentEntity payment, PaymentAttempt attempt, OutboxMessage outboxMessage, IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        _context.Payments.Update(payment);
+        await _context.PaymentAttempts.AddAsync(attempt, cancellationToken);
+        await _context.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
+        _context.IdempotencyKeys.Update(idempotencyKey);
         await _context.SaveChangesAsync(cancellationToken);
     }
 }
