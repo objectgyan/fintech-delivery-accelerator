@@ -88,7 +88,17 @@ public static class PaymentEndpoints
 
         // Reserve the key before processing so concurrent duplicates get 409
         var idempotencyKeyEntity = IdempotencyKey.Create(idempotencyKey, requestHash);
-        await repository.AddIdempotencyKeyAsync(idempotencyKeyEntity, cancellationToken);
+        try
+        {
+            await repository.AddIdempotencyKeyAsync(idempotencyKeyEntity, cancellationToken);
+        }
+        catch (IdempotencyConflictException)
+        {
+            return Results.Problem(
+                title: "Payment already in progress",
+                detail: "A payment with this Idempotency-Key is already being processed.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
 
         var command = new CreatePaymentCommand(
             request.Amount,
