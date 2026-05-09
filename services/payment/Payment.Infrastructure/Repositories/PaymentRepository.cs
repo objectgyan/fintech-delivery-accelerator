@@ -33,4 +33,25 @@ public sealed class PaymentRepository : IPaymentRepository
         await _context.PaymentAttempts.AddAsync(attempt, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task AddOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        await _context.OutboxMessages.AddAsync(message, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<List<OutboxMessage>> GetPendingOutboxMessagesAsync(int batchSize, CancellationToken cancellationToken = default)
+    {
+        return await _context.OutboxMessages
+            .Where(m => m.Status == OutboxStatus.Pending)
+            .OrderBy(m => m.CreatedAtUtc)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task UpdateOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        _context.OutboxMessages.Update(message);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }
