@@ -9,4 +9,7 @@ public interface IPaymentRepository
     Task UpdateAsync(PaymentEntity payment, CancellationToken cancellationToken = default);
     Task<PaymentEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task AddAttemptAsync(PaymentAttempt attempt, CancellationToken cancellationToken = default);
+    Task AddOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default);
+    Task<List<OutboxMessage>> GetPendingOutboxMessagesAsync(int batchSize, CancellationToken cancellationToken = default);
+    Task UpdateOutboxMessageAsync(OutboxMessage message, CancellationToken cancellationToken = default);
 }
