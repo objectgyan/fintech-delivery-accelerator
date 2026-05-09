@@ -35,6 +35,7 @@ public static class DependencyInjection
                     sp.GetRequiredService<ServiceBusClient>(),
                     topicName,
                     sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ServiceBusEventPublisher>>()));
+            services.AddHostedService<OutboxRelayService>();
         }
         else
         {
