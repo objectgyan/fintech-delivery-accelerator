@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Payment.Application.Exceptions;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
 using Payment.Infrastructure.Data;
@@ -73,7 +74,17 @@ public sealed class PaymentRepository : IPaymentRepository
     public async Task AddIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default)
     {
         await _context.IdempotencyKeys.AddAsync(idempotencyKey, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("UX_IdempotencyKeys_Key") == true
+                                           || ex.InnerException?.Message.Contains("unique") == true)
+        {
+            // Two concurrent requests raced past the read check — treat as in-progress conflict
+            _context.ChangeTracker.Clear();
+            throw new IdempotencyConflictException();
+        }
     }
 
     public async Task UpdateIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default)
