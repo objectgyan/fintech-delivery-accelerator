@@ -1,10 +1,13 @@
 using System.Text.Json;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using Payment.Application.Events;
 using Payment.Application.Exceptions;
 using Payment.Application.Providers;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
+using Polly;
+using Polly.Retry;
 
 namespace Payment.Application.Commands.CreatePayment;
 
@@ -12,13 +15,19 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 {
     private readonly IPaymentProvider _provider;
     private readonly IPaymentRepository _repository;
+    private readonly ILogger<CreatePaymentCommandHandler> _logger;
 
+    private const int MaxProviderRetries = 3;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public CreatePaymentCommandHandler(IPaymentProvider provider, IPaymentRepository repository)
+    public CreatePaymentCommandHandler(
+        IPaymentProvider provider,
+        IPaymentRepository repository,
+        ILogger<CreatePaymentCommandHandler> logger)
     {
         _provider = provider;
         _repository = repository;
+        _logger = logger;
     }
 
     public async Task<CreatePaymentResult> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -28,25 +37,54 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         // Save as Pending first so PaymentAttempts FK is valid
         await _repository.AddAsync(payment, cancellationToken);
 
-        var attempt = PaymentAttempt.Start(payment.Id, attemptNo: 1, provider: "stripe");
+        // Per-request mutable state captured by the retry callback closure
+        var attemptNo = 1;
+        var currentAttempt = PaymentAttempt.Start(payment.Id, attemptNo, "stripe");
 
-        var providerResult = await _provider.AuthorizeAsync(
-            request.Amount,
-            request.Currency,
-            request.PaymentMethodToken,
+        var retryPipeline = new ResiliencePipelineBuilder<ProviderResult>()
+            .AddRetry(new RetryStrategyOptions<ProviderResult>
+            {
+                ShouldHandle = new PredicateBuilder<ProviderResult>()
+                    .HandleResult(r => !r.Success && r.IsTransient),
+                MaxRetryAttempts = MaxProviderRetries,
+                Delay = TimeSpan.FromSeconds(1),
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                OnRetry = async args =>
+                {
+                    var failed = args.Outcome.Result!;
+                    currentAttempt.Fail(failed.ErrorCode, failed.ErrorMessage, failed.IsTransient);
+                    await _repository.AddAttemptAsync(currentAttempt, cancellationToken);
+                    attemptNo++;
+                    currentAttempt = PaymentAttempt.Start(payment.Id, attemptNo, "stripe");
+
+                    _logger.LogWarning(
+                        "Transient provider failure on attempt {AttemptNo} for payment {PaymentId} trace {TraceId}. " +
+                        "Retrying in {RetryDelay:0.0}s (error: {ErrorCode})",
+                        args.AttemptNumber + 1,
+                        payment.Id,
+                        request.TraceId,
+                        args.RetryDelay.TotalSeconds,
+                        failed.ErrorCode);
+                }
+            })
+            .Build();
+
+        var providerResult = await retryPipeline.ExecuteAsync(
+            async ct => await _provider.AuthorizeAsync(request.Amount, request.Currency, request.PaymentMethodToken, ct),
             cancellationToken);
 
         if (!providerResult.Success)
         {
             payment.Fail();
-            attempt.Fail(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
+            currentAttempt.Fail(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
             await _repository.UpdateAsync(payment, cancellationToken);
-            await _repository.AddAttemptAsync(attempt, cancellationToken);
+            await _repository.AddAttemptAsync(currentAttempt, cancellationToken);
             throw new PaymentProviderException(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
         }
 
         payment.Authorize(providerResult.ProviderReference!);
-        attempt.Succeed();
+        currentAttempt.Succeed();
 
         var evt = PaymentAuthorizedEvent.From(
             paymentId: payment.Id,
@@ -72,12 +110,11 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 paymentId: payment.Id,
                 responseJson: JsonSerializer.Serialize(result, JsonOptions),
                 statusCode: 201);
-            // Payment + attempt + outbox + idempotency key committed in one transaction
-            await _repository.CompleteWithIdempotencyAsync(payment, attempt, outboxMessage, idempotencyKey, cancellationToken);
+            await _repository.CompleteWithIdempotencyAsync(payment, currentAttempt, outboxMessage, idempotencyKey, cancellationToken);
         }
         else
         {
-            await _repository.CompletePaymentAsync(payment, attempt, outboxMessage, cancellationToken);
+            await _repository.CompletePaymentAsync(payment, currentAttempt, outboxMessage, cancellationToken);
         }
 
         return result;
