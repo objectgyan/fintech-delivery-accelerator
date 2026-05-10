@@ -7,6 +7,7 @@ using Payment.Application.Providers;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
 using Polly;
+using Polly.CircuitBreaker;
 using Polly.Retry;
 
 namespace Payment.Application.Commands.CreatePayment;
@@ -16,6 +17,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly IPaymentProvider _provider;
     private readonly IPaymentRepository _repository;
     private readonly ILogger<CreatePaymentCommandHandler> _logger;
+    private readonly ResiliencePipeline<ProviderResult> _circuitBreaker;
 
     private const int MaxProviderRetries = 3;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -23,11 +25,13 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     public CreatePaymentCommandHandler(
         IPaymentProvider provider,
         IPaymentRepository repository,
-        ILogger<CreatePaymentCommandHandler> logger)
+        ILogger<CreatePaymentCommandHandler> logger,
+        ResiliencePipeline<ProviderResult> circuitBreaker)
     {
         _provider = provider;
         _repository = repository;
         _logger = logger;
+        _circuitBreaker = circuitBreaker;
     }
 
     public async Task<CreatePaymentResult> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -70,9 +74,27 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             })
             .Build();
 
-        var providerResult = await retryPipeline.ExecuteAsync(
-            async ct => await _provider.AuthorizeAsync(request.Amount, request.Currency, request.PaymentMethodToken, ct),
-            cancellationToken);
+        ProviderResult providerResult;
+        try
+        {
+            // Circuit breaker (singleton) wraps retry (per-request) — breaker trips after exhausted retry batches
+            providerResult = await _circuitBreaker.ExecuteAsync(async ct =>
+                await retryPipeline.ExecuteAsync(
+                    async ct2 => await _provider.AuthorizeAsync(request.Amount, request.Currency, request.PaymentMethodToken, ct2),
+                    ct),
+                cancellationToken);
+        }
+        catch (BrokenCircuitException)
+        {
+            _logger.LogWarning(
+                "Circuit breaker open for payment {PaymentId} trace {TraceId} — failing fast",
+                payment.Id, request.TraceId);
+            payment.Fail();
+            currentAttempt.Fail("circuit_open", "Payment service temporarily unavailable — circuit breaker open.", true);
+            await _repository.UpdateAsync(payment, cancellationToken);
+            await _repository.AddAttemptAsync(currentAttempt, cancellationToken);
+            throw new PaymentProviderException("circuit_open", "Payment service temporarily unavailable.", true);
+        }
 
         if (!providerResult.Success)
         {
