@@ -56,6 +56,8 @@ public static class DependencyInjection
             services.AddScoped<IEventPublisher, NullEventPublisher>();
         }
 
+        services.AddHostedService<OutboxCleanupService>();
+
         return services;
     }
 }

@@ -17,4 +17,5 @@ public interface IPaymentRepository
     Task AddIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default);
     Task UpdateIdempotencyKeyAsync(IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default);
     Task CompleteWithIdempotencyAsync(PaymentEntity payment, PaymentAttempt attempt, OutboxMessage outboxMessage, IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default);
+    Task<int> DeletePublishedOutboxMessagesAsync(DateTimeOffset olderThan, CancellationToken cancellationToken = default);
 }
