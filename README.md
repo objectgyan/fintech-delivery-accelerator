@@ -30,8 +30,8 @@ An end-to-end payment processing system demonstrating:
 |-------|------|--------|
 | 0 — Foundation | Repo, Azure, CI/CD, placeholder service | ✅ Done |
 | 1 — Thin Vertical Slice | POST /payments → Stripe → SQL → Event → Notification | ✅ Done |
-| 2 — Reliability | Outbox, idempotency, retry, circuit breaker | 🔄 In progress |
-| 3 — Real System Feel | Fraud, email, OpenTelemetry | ⏳ Pending |
+| 2 — Reliability | Outbox, idempotency, retry, circuit breaker | ✅ Done |
+| 3 — Observability | OpenTelemetry, structured logging, dashboards | 🔄 In progress |
 | 4 — Enterprise Hardening | Managed identity, private endpoints, blue-green | ⏳ Pending |
 
 ---
@@ -87,7 +87,7 @@ flowchart TB
 ```
 
 > **Key design decisions**
-> - ACA scale-to-zero for Payment API (min=0) — cost-saving for dev; Notification Worker stays at min=1 to never miss messages
+> - ACA scale-to-zero for both apps (min=0) — cost-saving for dev; outbox relay ensures no events are lost during downtime (messages stay Pending until relay comes back up)
 > - Service Bus **Standard SKU** — minimum required for topics + subscriptions (Basic only has queues)
 > - ACR auth via managed identity — no stored passwords anywhere in the pipeline
 > - Azure SQL **Serverless** — auto-pauses after 60 min idle; expect 30-60 s cold-start on first connection
@@ -95,7 +95,7 @@ flowchart TB
 
 ---
 
-### Phase 2 — Reliability Pattern (in progress)
+### Phase 2 — Reliability Pattern ✅
 
 Phase 1 publishes events directly inside the command handler — if the Service Bus call fails after the SQL write, the event is silently lost. Phase 2 replaces this with the **transactional outbox pattern**.
 

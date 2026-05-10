@@ -1,10 +1,10 @@
 # CLAUDE.md - FinTech Delivery Accelerator
 
 ## Current Phase
-**Phase 2 — Reliability**
+**Phase 3 — Observability**
 
-We are adding reliability patterns to the payment service: transactional outbox, idempotency keys, payment attempt tracking, retry, and circuit breaker.
-Do NOT add: OpenTelemetry, fraud scoring, email notifications, or any Phase 3+ patterns yet.
+Phase 2 (Reliability) is complete. Phase 3 covers: OpenTelemetry distributed tracing, structured logging improvements, dashboards, and alerting.
+Do NOT add: fraud scoring, email notifications, or any Phase 4+ patterns yet.
 
 ## Complexity Guardrail
 Before adding any new component, answer:
@@ -59,7 +59,7 @@ Eventual reuse target: Insurance, Healthcare, AECO verticals.
 - Generate a short plan first; engineer approves before coding
 - Prefer small PRs over large ones
 - When unsure, ask in chat before writing speculative code
-- Trailer commits with: Co-authored-by: claude-code[bot]
+- No Co-authored-by or attribution trailers in commit messages
 - Never log secrets, card-like data, or raw stack traces
 
 ## Branch Workflow
