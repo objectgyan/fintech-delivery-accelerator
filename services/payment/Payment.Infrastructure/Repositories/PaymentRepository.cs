@@ -101,4 +101,11 @@ public sealed class PaymentRepository : IPaymentRepository
         _context.IdempotencyKeys.Update(idempotencyKey);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<int> DeletePublishedOutboxMessagesAsync(DateTimeOffset olderThan, CancellationToken cancellationToken = default)
+    {
+        return await _context.OutboxMessages
+            .Where(m => m.Status == OutboxStatus.Published && m.ProcessedAtUtc < olderThan)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
 }
