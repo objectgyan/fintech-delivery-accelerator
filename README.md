@@ -6,21 +6,24 @@ Solo backend engineer + Claude Code. Demo-first delivery across 5 phases. Target
 
 ## What This Is
 
-An end-to-end payment processing system demonstrating:
-- Stripe payment authorisation
-- Azure Service Bus event messaging
-- Transactional outbox pattern
-- Idempotency and retry/circuit-breaker reliability
-- Fraud scoring
-- Distributed tracing via OpenTelemetry + Application Insights
+An end-to-end payment processing system demonstrating (✅ = shipped, 🔄 = in progress, ⏳ = upcoming):
+
+- ✅ Stripe payment authorisation
+- ✅ Azure Service Bus event messaging
+- ✅ Transactional outbox pattern
+- ✅ Idempotency and retry/circuit-breaker reliability
+- 🔄 Distributed tracing via OpenTelemetry + Application Insights
+- ⏳ Fraud scoring
+- ⏳ Email notifications
 
 ## Stack
 
 - **.NET 10** — ASP.NET Core minimal APIs, Clean Architecture per service
-- **Azure Container Apps** — hosting
+- **Azure Container Apps** — hosting, scale-to-zero
 - **Azure SQL** — persistence (EF Core + Dapper)
 - **Azure Service Bus** — event messaging (Standard, topics + subscriptions)
 - **Stripe** — payment provider (sandbox)
+- **Polly v8** — retry + circuit breaker
 - **Bicep** — infrastructure as code
 - **GitHub Actions** — CI/CD (OIDC, ACR, ACA)
 
@@ -57,25 +60,28 @@ flowchart TB
         ACR[("Container Registry\nfintechdevacr\nBasic SKU")]
 
         subgraph aca["ACA Environment — fintech-dev-aca-env"]
-            PayAPI["Payment API\n────────────────\nASP.NET Core Minimal API\nClean Architecture\nMediatR · EF Core · FluentValidation\nPort 8080 · public ingress"]
+            PayAPI["Payment API\n────────────────\nASP.NET Core Minimal API\nClean Architecture\nMediatR · EF Core · FluentValidation\nPolly v8 retry + circuit breaker\nPort 8080 · public ingress"]
+            OutboxRelay["Outbox Relay\n────────────────\nBackgroundService\n(inside Payment API)\npolls OutboxMessages every 5s"]
             NotifW["Notification Worker\n────────────────\nBackgroundService\nService Bus consumer\nno public ingress"]
         end
 
         subgraph store["Data & Messaging"]
-            SQL[("Azure SQL\nfintech-payments\nServerless · auto-pause 60 min\nWest US 2")]
+            SQL[("Azure SQL\nfintech-payments\nPayments · PaymentAttempts\nOutboxMessages · IdempotencyKeys\nServerless · auto-pause 60 min")]
             SB[("Service Bus\nfintech-dev-bus · Standard\ntopic: payment-authorized\nsubscription: notification")]
         end
 
         subgraph obs["Observability & Security"]
-            AI["Application Insights\nfintech-dev-ai\nbacked by Log Analytics"]
+            AI["Application Insights\nfintech-dev-ai\nbacked by Log Analytics\n1 GB/day cap"]
             KV["Key Vault\nfintech-dev-kv\nRBAC mode\nactive from Phase 4"]
         end
     end
 
-    Client -->|"POST /payments\nHTTPS"| PayAPI
+    Client -->|"POST /payments\n+ Idempotency-Key\nHTTPS"| PayAPI
     PayAPI <-->|"PaymentIntent\ncreate + confirm"| Stripe
-    PayAPI -->|"EF Core write\nPayments table"| SQL
-    PayAPI -->|"PaymentAuthorized.v1\njson event"| SB
+    PayAPI -->|"EF Core write\nPayments + OutboxMessages\n+ IdempotencyKeys\n(one transaction)"| SQL
+    PayAPI -.->|"hosted in\nsame process"| OutboxRelay
+    OutboxRelay -->|"poll pending\noutbox rows"| SQL
+    OutboxRelay -->|"PaymentAuthorized.v1\njson event"| SB
     SB -->|"consume\nsubscription"| NotifW
     PayAPI -->|"request traces\nexceptions · metrics"| AI
     NotifW -->|"consumer logs\ntraces"| AI
@@ -92,44 +98,57 @@ flowchart TB
 > - ACR auth via managed identity — no stored passwords anywhere in the pipeline
 > - Azure SQL **Serverless** — auto-pauses after 60 min idle; expect 30-60 s cold-start on first connection
 > - All secrets injected at runtime via ACA secret refs — never baked into images
+> - Log Analytics capped at 1 GB/day to prevent runaway dev ingestion cost
 
 ---
 
 ### Phase 2 — Reliability Pattern ✅
 
-Phase 1 publishes events directly inside the command handler — if the Service Bus call fails after the SQL write, the event is silently lost. Phase 2 replaces this with the **transactional outbox pattern**.
+Phase 1 published events directly inside the command handler — if the Service Bus call failed after the SQL write, the event was silently lost. Phase 2 replaces this with the **transactional outbox pattern** and adds full idempotency and resilience.
 
 ```mermaid
 flowchart LR
     subgraph handler["Command Handler\nsame DB transaction"]
         W1["Write Payment\nto Payments table"]
         W2["Write event\nto OutboxMessages table\nStatus=Pending"]
+        W3["Write IdempotencyKey\nwith response cached"]
         W1 --> W2
+        W1 --> W3
     end
 
-    subgraph relay["Outbox Relay\nBackgroundService"]
+    subgraph relay["Outbox Relay\nBackgroundService · every 5s"]
         R1["Poll OutboxMessages\nWHERE Status=Pending"]
         R2["Publish to\nService Bus"]
         R3["Mark\nStatus=Published"]
         R1 --> R2 --> R3
     end
 
-    subgraph resilience["Stripe Resilience\nPolly v8"]
-        P1["Retry\n3x on transient errors\nexponential backoff"]
-        P2["Circuit Breaker\nopen after 5 failures\n30 s reset"]
+    subgraph cleanup["Outbox Cleanup\nBackgroundService · every 24h"]
+        C1["Delete Published rows\nolder than 7 days"]
     end
 
-    Client -->|"POST /payments\n+ Idempotency-Key header"| IdempCheck
-    IdempCheck{"Idempotency\ncheck\nIdempotencyKeys\ntable"} -->|"duplicate"| CachedResp["Return cached\nresponse 200"]
-    IdempCheck -->|"new request"| handler
+    subgraph resilience["Stripe Resilience\nPolly v8"]
+        P1["Retry\n3x exponential backoff\n1s · 2s · 4s + jitter"]
+        P2["Circuit Breaker\n≥50% failures in 30s\n→ break 30s"]
+        P1 --> P2
+    end
+
+    Client -->|"POST /payments\n+ Idempotency-Key"| IdempCheck
+    IdempCheck{"IdempotencyKeys\ntable check"} -->|"same key\nsame hash"| CachedResp["Return cached\n201 response"]
+    IdempCheck -->|"same key\ndiff hash"| Conflict["409 Conflict"]
+    IdempCheck -->|"concurrent\nduplicate"| Conflict
+    IdempCheck -->|"new key"| handler
     handler -->|"authorize"| resilience
+    resilience -->|"Stripe call"| Stripe(["Stripe"])
     handler -->|"commit"| SQL[("Azure SQL")]
-    relay -->|"read"| SQL
+    R1 -->|"read"| SQL
+    R3 -->|"update"| SQL
+    C1 -->|"delete old rows"| SQL
     relay -->|"publish"| SB[("Service Bus")]
     SB -->|"consume"| NotifW["Notification\nWorker"]
 ```
 
-> **What this buys**: event delivery is now atomic with the payment write — a Service Bus outage or crash between publish and commit can no longer lose an event. Idempotency keys prevent duplicate charges on client retries.
+> **What this buys**: event delivery is atomic with the payment write. Idempotency keys prevent duplicate charges. Polly retries recover from transient Stripe errors. The circuit breaker prevents cascade failures. Concurrent duplicate requests are safe via DB-level unique constraint.
 
 ---
 
@@ -166,11 +185,11 @@ flowchart LR
 | FT-110 | Postman collection, SQL validation script, `docs/demo/phase1.md` |
 | FT-111 | Phase 1 demo verified twice end-to-end on ACA |
 
-### Phase 1 — Live Endpoints
+### Phase 1 — Live Endpoint
 
 | Service | URL |
 |---------|-----|
-| Payment API | `https://fintech-dev-payment.purplestone-2afd62bc.eastus.azurecontainerapps.io` |
+| Payment API | `https://payment-api.gentlerock-6e5c3f99.eastus.azurecontainerapps.io` |
 | Health check | `GET /health` → `{"status":"ok","service":"payment"}` |
 | Notification Worker | Internal ACA worker, no public ingress |
 
@@ -178,28 +197,31 @@ flowchart LR
 
 See [`docs/demo/phase1.md`](docs/demo/phase1.md) for step-by-step instructions.
 
-Quick smoke test:
-```bash
-curl https://fintech-dev-payment.purplestone-2afd62bc.eastus.azurecontainerapps.io/health
-```
-
-### Phase 1 — Known Limitations (Phase 2 work)
-
-| Limitation | Ticket |
-|------------|--------|
-| Events published directly — no transactional outbox (event lost if publish fails after DB write) | FT-203/205 |
-| No idempotency — duplicate requests create duplicate payments | FT-204 |
-| No retry on Stripe transient errors | FT-206 |
-| No circuit breaker | FT-207 |
-| Notification.Worker logs only — no email | FT-301 (Phase 3) |
-
 ---
 
-## Phase 2 — Reliability 🔄
+## Phase 2 — Reliability ✅
 
 **Goal:** Make the payment flow production-safe: transactional outbox, idempotency keys, payment attempt tracking, Polly retry + circuit breaker.
 
-*In progress — see Linear for current ticket status.*
+| Ticket | Deliverable |
+|--------|-------------|
+| FT-201 | Schema design doc — OutboxMessages, IdempotencyKeys, PaymentAttempts |
+| FT-202 | PaymentAttempts table — tracks every provider call attempt |
+| FT-203 | OutboxMessages table — EF config, filtered index on Status=Pending |
+| FT-204 | Outbox Relay BackgroundService — polls every 5s, publishes, marks Published |
+| FT-205 | Transactional handler — outbox write replaces direct Service Bus publish |
+| FT-206 | Idempotency-Key header validation — required on all POST /payments |
+| FT-207 | IdempotencyKeys table — store + replay cached 201 response |
+| FT-208 | Concurrency-safe idempotency — DB unique index guard, 409 on race |
+| FT-209 | Polly v8 retry — 3x exponential backoff, PaymentAttempts row per attempt |
+| FT-210 | Polly v8 circuit breaker — singleton, 50% failure ratio, 30s break, state logging |
+| FT-211 | Provider failure simulation — dev-only `Payment:SimulateTransientFailures` config flag |
+| FT-212 | Outbox cleanup service — BackgroundService, 7-day retention, `ExecuteDeleteAsync` |
+| FT-213 | Phase 2 demo guide — `docs/demo/phase2.md`, four runnable demo flows |
+
+### Phase 2 — Demo
+
+See [`docs/demo/phase2.md`](docs/demo/phase2.md) for four runnable demo flows: outbox relay, idempotency replay, concurrent idempotency, and retry + circuit breaker.
 
 ---
 
