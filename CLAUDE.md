@@ -1,9 +1,10 @@
 # CLAUDE.md - FinTech Delivery Accelerator
 
 ## Current Phase
-**Phase 3 — Real System Feel**
+**Phase 3 — Real System Feel** (code complete, pending demo validation)
 
-Phase 2 (Reliability) is complete. Phase 3 covers: Fraud service (rule engine + payment integration), email notifications via SendGrid/SMTP, structured JSON logging, OpenTelemetry distributed tracing, metrics + alerting, and the phase 3 demo.
+Phase 2 (Reliability) is complete. Phase 3 code is shipped across PRs #26–#32: Fraud service (rule engine + payment integration), email notifications via SendGrid, structured JSON logging, OpenTelemetry distributed tracing, custom metrics + Azure Monitor alerts, runbook, and the Phase 3 demo script + accelerator extraction docs. Phase 3 stays "in review" until the engineer runs the full 6-scenario demo twice and captures evidence (see `docs/demo/phase3.md`).
+
 Do NOT add: managed identity, private endpoints, APIM, blue-green, or any Phase 4+ patterns yet.
 
 ## Complexity Guardrail

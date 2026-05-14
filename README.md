@@ -12,9 +12,10 @@ An end-to-end payment processing system demonstrating (✅ = shipped, 🔄 = in 
 - ✅ Azure Service Bus event messaging
 - ✅ Transactional outbox pattern
 - ✅ Idempotency and retry/circuit-breaker reliability
-- 🔄 Distributed tracing via OpenTelemetry + Application Insights
-- ⏳ Fraud scoring
-- ⏳ Email notifications
+- ✅ Fraud rule engine (synchronous, in payment flow)
+- ✅ Email notifications via SendGrid
+- ✅ Structured JSON logging + OpenTelemetry distributed tracing
+- ✅ Custom metrics + Azure Monitor alerts + runbook
 
 ## Stack
 
@@ -23,8 +24,10 @@ An end-to-end payment processing system demonstrating (✅ = shipped, 🔄 = in 
 - **Azure SQL** — persistence (EF Core + Dapper)
 - **Azure Service Bus** — event messaging (Standard, topics + subscriptions)
 - **Stripe** — payment provider (sandbox)
+- **SendGrid** — email delivery
 - **Polly v8** — retry + circuit breaker
-- **Bicep** — infrastructure as code
+- **OpenTelemetry + Azure Monitor** — distributed tracing, custom metrics
+- **Bicep** — infrastructure as code (including alerts + action groups)
 - **GitHub Actions** — CI/CD (OIDC, ACR, ACA)
 
 ## Phases
@@ -34,7 +37,7 @@ An end-to-end payment processing system demonstrating (✅ = shipped, 🔄 = in 
 | 0 — Foundation | Repo, Azure, CI/CD, placeholder service | ✅ Done |
 | 1 — Thin Vertical Slice | POST /payments → Stripe → SQL → Event → Notification | ✅ Done |
 | 2 — Reliability | Outbox, idempotency, retry, circuit breaker | ✅ Done |
-| 3 — Observability | OpenTelemetry, structured logging, dashboards | 🔄 In progress |
+| 3 — Real System Feel | Fraud, email notifications, JSON logging, OTel, metrics + alerts | ✅ Code complete (demo validation pending) |
 | 4 — Enterprise Hardening | Managed identity, private endpoints, blue-green | ⏳ Pending |
 
 ---
@@ -62,29 +65,41 @@ flowchart TB
         subgraph aca["ACA Environment — fintech-dev-aca-env"]
             PayAPI["Payment API\n────────────────\nASP.NET Core Minimal API\nClean Architecture\nMediatR · EF Core · FluentValidation\nPolly v8 retry + circuit breaker\nPort 8080 · public ingress"]
             OutboxRelay["Outbox Relay\n────────────────\nBackgroundService\n(inside Payment API)\npolls OutboxMessages every 5s"]
-            NotifW["Notification Worker\n────────────────\nBackgroundService\nService Bus consumer\nno public ingress"]
+            FraudAPI["Fraud API\n────────────────\nRule engine + EF\nsync HTTP from Payment\ndecision logged"]
+            NotifW["Notification Worker\n────────────────\nBackgroundService\nService Bus consumer\nSendGrid email\nNotificationLogs"]
         end
 
         subgraph store["Data & Messaging"]
-            SQL[("Azure SQL\nfintech-payments\nPayments · PaymentAttempts\nOutboxMessages · IdempotencyKeys\nServerless · auto-pause 60 min")]
+            SQL[("Azure SQL\nfintech-payments\nPayments · PaymentAttempts\nOutboxMessages · IdempotencyKeys\nFraudDecisions · NotificationLogs\nServerless · auto-pause 60 min")]
             SB[("Service Bus\nfintech-dev-bus · Standard\ntopic: payment-authorized\nsubscription: notification")]
         end
 
         subgraph obs["Observability & Security"]
             AI["Application Insights\nfintech-dev-ai\nbacked by Log Analytics\n1 GB/day cap"]
+            ALR["Metric Alerts\npayment-5xx-rate\nsb-dlq-depth\n→ email action group"]
             KV["Key Vault\nfintech-dev-kv\nRBAC mode\nactive from Phase 4"]
+        end
+
+        subgraph ext2["External (Phase 3)"]
+            SendGrid(["SendGrid\nemail provider"])
         end
     end
 
     Client -->|"POST /payments\n+ Idempotency-Key\nHTTPS"| PayAPI
     PayAPI <-->|"PaymentIntent\ncreate + confirm"| Stripe
+    PayAPI -->|"POST /fraud/evaluate\nsync, 5s timeout"| FraudAPI
+    FraudAPI -->|"FraudDecisions write"| SQL
     PayAPI -->|"EF Core write\nPayments + OutboxMessages\n+ IdempotencyKeys\n(one transaction)"| SQL
     PayAPI -.->|"hosted in\nsame process"| OutboxRelay
     OutboxRelay -->|"poll pending\noutbox rows"| SQL
     OutboxRelay -->|"PaymentAuthorized.v1\njson event"| SB
     SB -->|"consume\nsubscription"| NotifW
-    PayAPI -->|"request traces\nexceptions · metrics"| AI
-    NotifW -->|"consumer logs\ntraces"| AI
+    NotifW -->|"send email"| SendGrid
+    NotifW -->|"NotificationLogs"| SQL
+    PayAPI -->|"JSON logs · traces · metrics"| AI
+    FraudAPI -->|"JSON logs · traces"| AI
+    NotifW -->|"JSON logs · traces"| AI
+    AI --> ALR
     CI -->|"az acr build\ncloud-side Docker build"| ACR
     ACR -.->|"AcrPull\nsystem-assigned\nmanaged identity"| PayAPI
     ACR -.->|"AcrPull\nsystem-assigned\nmanaged identity"| NotifW
@@ -225,9 +240,70 @@ See [`docs/demo/phase2.md`](docs/demo/phase2.md) for four runnable demo flows: o
 
 ---
 
+## Phase 3 — Real System Feel ✅
+
+**Goal:** Round out the platform with fraud screening, email notifications, and a production-shaped observability story.
+
+| Ticket | Deliverable |
+|--------|-------------|
+| FT-301 | Fraud.Api skeleton — Domain/Application/Infrastructure, decision contract, CI/CD inclusion |
+| FT-302 | Fraud rule engine — score-based decisions, EF persistence, `POST /fraud/evaluate`, 7 unit tests |
+| FT-303 | Fraud integration into payment flow — synchronous, graceful degradation, declines abort before Stripe |
+| FT-304 | SendGrid email on `PaymentAuthorized` — `NotificationLogs` table, idempotent delivery, null fallback |
+| FT-305 | Structured JSON logging shared formatter — required schema, traceId, propagation across all three services |
+| FT-306 | OpenTelemetry tracing — W3C TraceContext across HTTP + Service Bus, App Insights exporter, `X-Trace-Id` response header |
+| FT-307 | Custom metrics + alerts — 8 metrics via `FintechMeter`, Payment-5xx + SB-DLQ alerts, action group, runbook |
+| FT-308 | Phase 3 demo verification + accelerator extraction |
+
+### Phase 3 — Observability Architecture
+
+```mermaid
+flowchart LR
+    subgraph services["Services emit"]
+        PAY["Payment.Api"]
+        FRD["Fraud.Api"]
+        NOT["Notification.Worker"]
+    end
+
+    subgraph shared["shared/observability/Fintech.Observability"]
+        JSON["FintechJsonConsoleFormatter\nrequired schema:\ntimestampUtc · level · service\ntraceId · operation · message"]
+        OTEL["AddFintechTelemetry\nAspNetCore · HttpClient · SqlClient\n+ Azure SDK ActivitySource"]
+        METER["FintechMeter\npayment.* + outbox.*\ncounters + histograms"]
+    end
+
+    subgraph azure["Azure"]
+        AI["Application Insights\nfintech-dev-ai"]
+        ALERTS["Metric Alerts\npayment-5xx-rate\nsb-dlq-depth"]
+        AG["Action Group\nemail receiver"]
+    end
+
+    PAY & FRD & NOT --> JSON
+    PAY & FRD & NOT --> OTEL
+    PAY --> METER
+    JSON --> AI
+    OTEL --> AI
+    METER --> AI
+    AI --> ALERTS
+    ALERTS --> AG
+```
+
+> **Trace coverage**: a single trace ID follows a payment through Payment → Fraud (HTTP) → SQL → Service Bus → Notification → SendGrid. Copy the `X-Trace-Id` response header to find the full transaction in App Insights.
+
+### Phase 3 — Demo
+
+See [`docs/demo/phase3.md`](docs/demo/phase3.md) for the six demo scenarios (success / failure+retry / idempotency / fraud / email / trace) and evidence checklist.
+
+### Phase 3 — Accelerator Extraction
+
+[`docs/accelerator/`](docs/accelerator/README.md) contains the reusable assets: `CLAUDE.md` template, Bicep modules guide, outbox + idempotency + observability patterns, phase template, and a frank list of known limitations.
+
+---
+
 ## Getting Started
 
 See `docs/demo/` for phase-specific demo instructions and `scripts/Validate-PaymentService.ps1` for automated local validation.
+
+For ops triage, see [`docs/runbook.md`](docs/runbook.md).
 
 ## Rule of Thumb
 
