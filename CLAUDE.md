@@ -1,10 +1,10 @@
 # CLAUDE.md - FinTech Delivery Accelerator
 
 ## Current Phase
-**Phase 3 — Observability**
+**Phase 3 — Real System Feel**
 
-Phase 2 (Reliability) is complete. Phase 3 covers: OpenTelemetry distributed tracing, structured logging improvements, dashboards, and alerting.
-Do NOT add: fraud scoring, email notifications, or any Phase 4+ patterns yet.
+Phase 2 (Reliability) is complete. Phase 3 covers: Fraud service (rule engine + payment integration), email notifications via SendGrid/SMTP, structured JSON logging, OpenTelemetry distributed tracing, metrics + alerting, and the phase 3 demo.
+Do NOT add: managed identity, private endpoints, APIM, blue-green, or any Phase 4+ patterns yet.
 
 ## Complexity Guardrail
 Before adding any new component, answer:

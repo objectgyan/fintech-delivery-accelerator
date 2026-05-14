@@ -1,0 +1,7 @@
+{
+  "paymentId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "score": 75,
+  "decision": "approve",
+  "rulesTriggered": ["high-amount"],
+  "evaluatedAtUtc": "2026-05-01T12:00:00Z"
+}
