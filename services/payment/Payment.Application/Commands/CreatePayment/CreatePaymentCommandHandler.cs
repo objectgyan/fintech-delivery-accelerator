@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Text.Json;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Payment.Application.Events;
 using Payment.Application.Exceptions;
 using Payment.Application.Fraud;
+using Payment.Application.Observability;
 using Payment.Application.Providers;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
@@ -20,6 +22,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly IPaymentRepository _repository;
     private readonly ILogger<CreatePaymentCommandHandler> _logger;
     private readonly ResiliencePipeline<ProviderResult> _circuitBreaker;
+    private readonly PaymentMetrics _metrics;
 
     private const int MaxProviderRetries = 3;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -29,16 +32,32 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         IFraudService fraudService,
         IPaymentRepository repository,
         ILogger<CreatePaymentCommandHandler> logger,
-        ResiliencePipeline<ProviderResult> circuitBreaker)
+        ResiliencePipeline<ProviderResult> circuitBreaker,
+        PaymentMetrics metrics)
     {
         _provider = provider;
         _fraudService = fraudService;
         _repository = repository;
         _logger = logger;
         _circuitBreaker = circuitBreaker;
+        _metrics = metrics;
     }
 
     public async Task<CreatePaymentResult> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
+    {
+        _metrics.Requests.Add(1);
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            return await HandleInternal(request, cancellationToken);
+        }
+        finally
+        {
+            _metrics.LatencyMs.Record(sw.Elapsed.TotalMilliseconds);
+        }
+    }
+
+    private async Task<CreatePaymentResult> HandleInternal(CreatePaymentCommand request, CancellationToken cancellationToken)
     {
         var payment = Domain.Entities.Payment.Create(request.Amount, request.Currency, request.CustomerEmail);
 
@@ -53,6 +72,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         {
             payment.Fail();
             await _repository.UpdateAsync(payment, cancellationToken);
+            _metrics.Failures.Add(1, new KeyValuePair<string, object?>("reason", "fraud_declined"));
             _logger.LogWarning(
                 "Payment {PaymentId} declined by fraud screening — score {Score} rules [{Rules}]",
                 payment.Id, fraudResult.Score, string.Join(", ", fraudResult.RulesTriggered));
@@ -84,6 +104,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                     var failed = args.Outcome.Result!;
                     currentAttempt.Fail(failed.ErrorCode, failed.ErrorMessage, failed.IsTransient);
                     await _repository.AddAttemptAsync(currentAttempt, cancellationToken);
+                    _metrics.Retries.Add(1);
+                    _metrics.StripeErrors.Add(1, new KeyValuePair<string, object?>("transient", true));
                     attemptNo++;
                     currentAttempt = PaymentAttempt.Start(payment.Id, attemptNo, "stripe");
 
@@ -118,6 +140,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             currentAttempt.Fail("circuit_open", "Payment service temporarily unavailable — circuit breaker open.", true);
             await _repository.UpdateAsync(payment, cancellationToken);
             await _repository.AddAttemptAsync(currentAttempt, cancellationToken);
+            _metrics.Failures.Add(1, new KeyValuePair<string, object?>("reason", "circuit_open"));
             throw new PaymentProviderException("circuit_open", "Payment service temporarily unavailable.", true);
         }
 
@@ -127,11 +150,14 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             currentAttempt.Fail(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
             await _repository.UpdateAsync(payment, cancellationToken);
             await _repository.AddAttemptAsync(currentAttempt, cancellationToken);
+            _metrics.Failures.Add(1, new KeyValuePair<string, object?>("reason", "stripe_failed"));
+            _metrics.StripeErrors.Add(1, new KeyValuePair<string, object?>("transient", providerResult.IsTransient));
             throw new PaymentProviderException(providerResult.ErrorCode, providerResult.ErrorMessage, providerResult.IsTransient);
         }
 
         payment.Authorize(providerResult.ProviderReference!);
         currentAttempt.Succeed();
+        _metrics.Successes.Add(1);
 
         var evt = PaymentAuthorizedEvent.From(
             paymentId: payment.Id,

@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Payment.Application.Observability;
 using Payment.Application.Providers;
 using Polly;
 using Polly.CircuitBreaker;
@@ -15,6 +16,7 @@ public static class DependencyInjection
             cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly));
 
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
+        services.AddSingleton<PaymentMetrics>();
 
         // Singleton circuit breaker — shared state across all payment requests
         // Threshold: ≥50% transient failures across 5+ calls in a 30s window → break for 30s
