@@ -22,4 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\shared\observability\Fintech.Observability\Fintech.Observability.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\shared\observability\Fintech.Observability\Fintech.Observability.csproj" />
+  </ItemGroup>
 </Project>

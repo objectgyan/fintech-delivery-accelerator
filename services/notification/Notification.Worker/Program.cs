@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using Fintech.Observability.Logging;
+using Fintech.Observability.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Notification.Worker.Data;
 using Notification.Worker.Email;
@@ -9,6 +10,7 @@ using SendGrid;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging.AddFintechJsonLogging("notification", builder.Configuration);
+builder.Services.AddFintechTelemetry("notification", builder.Configuration);
 
 builder.Services.AddApplicationInsightsTelemetryWorkerService();
 
