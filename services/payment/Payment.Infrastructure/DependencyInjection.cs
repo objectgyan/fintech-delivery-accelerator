@@ -4,9 +4,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Payment.Application.Events;
+using Payment.Application.Fraud;
 using Payment.Application.Providers;
 using Payment.Domain.Repositories;
 using Payment.Infrastructure.Data;
+using Payment.Infrastructure.Fraud;
 using Payment.Infrastructure.Messaging;
 using Payment.Infrastructure.Providers;
 using Payment.Infrastructure.Repositories;
@@ -57,6 +59,20 @@ public static class DependencyInjection
         }
 
         services.AddHostedService<OutboxCleanupService>();
+
+        var fraudServiceUrl = configuration["Fraud:ServiceUrl"];
+        if (!string.IsNullOrWhiteSpace(fraudServiceUrl))
+        {
+            services.AddHttpClient<IFraudService, HttpFraudService>(client =>
+            {
+                client.BaseAddress = new Uri(fraudServiceUrl);
+                client.Timeout = TimeSpan.FromSeconds(5);
+            });
+        }
+        else
+        {
+            services.AddScoped<IFraudService, NullFraudService>();
+        }
 
         return services;
     }

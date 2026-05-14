@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using Payment.Application.Events;
 using Payment.Application.Exceptions;
+using Payment.Application.Fraud;
 using Payment.Application.Providers;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
@@ -15,6 +16,7 @@ namespace Payment.Application.Commands.CreatePayment;
 public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentCommand, CreatePaymentResult>
 {
     private readonly IPaymentProvider _provider;
+    private readonly IFraudService _fraudService;
     private readonly IPaymentRepository _repository;
     private readonly ILogger<CreatePaymentCommandHandler> _logger;
     private readonly ResiliencePipeline<ProviderResult> _circuitBreaker;
@@ -24,11 +26,13 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 
     public CreatePaymentCommandHandler(
         IPaymentProvider provider,
+        IFraudService fraudService,
         IPaymentRepository repository,
         ILogger<CreatePaymentCommandHandler> logger,
         ResiliencePipeline<ProviderResult> circuitBreaker)
     {
         _provider = provider;
+        _fraudService = fraudService;
         _repository = repository;
         _logger = logger;
         _circuitBreaker = circuitBreaker;
@@ -40,6 +44,27 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 
         // Save as Pending first so PaymentAttempts FK is valid
         await _repository.AddAsync(payment, cancellationToken);
+
+        // Fraud screening — declines abort before Stripe; reviews proceed with flag
+        var fraudResult = await _fraudService.EvaluateAsync(
+            payment.Id, payment.Amount, payment.Currency, payment.CustomerEmail, cancellationToken);
+
+        if (fraudResult.Decision == Fraud.FraudDecision.Decline)
+        {
+            payment.Fail();
+            await _repository.UpdateAsync(payment, cancellationToken);
+            _logger.LogWarning(
+                "Payment {PaymentId} declined by fraud screening — score {Score} rules [{Rules}]",
+                payment.Id, fraudResult.Score, string.Join(", ", fraudResult.RulesTriggered));
+            throw new FraudDeclinedException(fraudResult.Score, fraudResult.RulesTriggered);
+        }
+
+        if (fraudResult.Decision == Fraud.FraudDecision.Review)
+        {
+            _logger.LogInformation(
+                "Payment {PaymentId} flagged for fraud review — score {Score} rules [{Rules}] — proceeding",
+                payment.Id, fraudResult.Score, string.Join(", ", fraudResult.RulesTriggered));
+        }
 
         // Per-request mutable state captured by the retry callback closure
         var attemptNo = 1;
@@ -124,7 +149,9 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             Status: payment.Status.ToString().ToLowerInvariant(),
             Provider: payment.Provider,
             ProviderReference: payment.ProviderReference,
-            CreatedAtUtc: payment.CreatedAtUtc);
+            CreatedAtUtc: payment.CreatedAtUtc,
+            FraudDecision: fraudResult.Decision,
+            FraudScore: fraudResult.Score);
 
         if (request.IdempotencyKeyEntity is { } idempotencyKey)
         {
