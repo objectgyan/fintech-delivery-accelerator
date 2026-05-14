@@ -1,3 +1,4 @@
+using Fintech.Observability.Logging;
 using Microsoft.EntityFrameworkCore;
 using Payment.Api.Endpoints;
 using Payment.Application;
@@ -5,6 +6,8 @@ using Payment.Infrastructure;
 using Payment.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.AddFintechJsonLogging("payment", builder.Configuration);
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());

@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Fraud.Application\Fraud.Application.csproj" />
     <ProjectReference Include="..\Fraud.Infrastructure\Fraud.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\shared\observability\Fintech.Observability\Fintech.Observability.csproj" />
   </ItemGroup>
 
 </Project>
