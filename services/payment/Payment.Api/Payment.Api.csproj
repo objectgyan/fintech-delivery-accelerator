@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Payment.Application\Payment.Application.csproj" />
     <ProjectReference Include="..\Payment.Infrastructure\Payment.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\shared\observability\Fintech.Observability\Fintech.Observability.csproj" />
   </ItemGroup>
 
 </Project>

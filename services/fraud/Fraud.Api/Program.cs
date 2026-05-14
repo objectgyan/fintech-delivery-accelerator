@@ -1,3 +1,4 @@
+using Fintech.Observability.Logging;
 using Fraud.Api.Endpoints;
 using Fraud.Application;
 using Fraud.Infrastructure;
@@ -5,6 +6,8 @@ using Fraud.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.AddFintechJsonLogging("fraud", builder.Configuration);
 
 builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);

@@ -1,7 +1,10 @@
 using Azure.Messaging.ServiceBus;
+using Fintech.Observability.Logging;
 using Notification.Worker.Workers;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Logging.AddFintechJsonLogging("notification", builder.Configuration);
 
 builder.Services.AddApplicationInsightsTelemetryWorkerService();
 builder.Services.Configure<ServiceBusOptions>(
