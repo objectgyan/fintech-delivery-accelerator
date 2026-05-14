@@ -1,0 +1,63 @@
+# CLAUDE.md - {{PROJECT_NAME}}
+
+## Current Phase
+**Phase {{N}} — {{PHASE_NAME}}**
+
+{{1-2 sentences: what this phase covers, what's already done, what NOT to add yet}}
+
+## Complexity Guardrail
+Before adding any new component, answer:
+1. Is this required for the current phase demo?
+2. Does it unblock a current ticket?
+3. Is there a simpler option?
+
+If no to (1) and (2), do not implement it yet. Never implement features from future phases unless the ticket explicitly says so.
+
+## Project Context
+{{2-3 sentences: domain, team shape, delivery cadence, reuse target}}
+
+## Stack & Conventions
+- {{language + runtime, e.g. .NET 10, C# 14}}
+- {{web framework + architecture, e.g. ASP.NET Core minimal APIs, Clean Architecture per service}}
+- {{patterns, e.g. CQRS via MediatR, EF Core for writes, Dapper for read-heavy}}
+- {{validation, e.g. FluentValidation}}
+- {{resilience, e.g. Polly v8 for retry / circuit breaker}}
+- {{test stack, e.g. xUnit + FluentAssertions}}
+- {{infra-as-code, e.g. Bicep modules in infra/, one module per resource type}}
+- Secret naming: `{{PROJECT}}--SERVICE--SETTING`
+
+## Definition of Ready
+- Goal, Scope, AC, Validation, Evidence filled in
+- Dependencies complete or mocked
+- Current Phase correct in this file
+- No future-phase work unless explicitly approved
+- Required secrets/accounts available or mock path defined
+
+## Definition of Done
+- Implementation matches scope only
+- Build green locally and in CI
+- Validation complete (unit/integration/API as appropriate)
+- Deploy to active environment succeeds for deployable changes
+- Evidence posted to ticket tracker (output, screenshot, trace ID, log)
+- Engineer verifies evidence before marking Done
+- **README architecture diagrams updated** if this ticket adds/changes a service, table, infra resource, or data flow
+
+## Ask Before Doing
+- Database migrations beyond simple table creation
+- Cost-impacting cloud SKU upgrades
+- Authentication or networking changes
+- Breaking API or event schema changes
+- Adding new top-level dependencies
+- Any future-phase work
+
+## Working Style
+- Generate a short plan first; engineer approves before coding
+- Prefer small PRs over large ones
+- When unsure, ask in chat before writing speculative code
+- No Co-authored-by or attribution trailers in commit messages
+- Never log secrets, card-like data, or raw stack traces
+
+## Branch Workflow
+- Every ticket gets its own feature branch before any files are touched
+- Branch name comes from the ticket tracker's git branch field exactly
+- Never commit directly to `main`
