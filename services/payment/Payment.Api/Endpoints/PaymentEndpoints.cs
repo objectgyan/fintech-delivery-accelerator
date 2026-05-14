@@ -9,6 +9,7 @@ using Payment.Application.Commands.CreatePayment;
 using Payment.Application.Exceptions;
 using Payment.Domain.Entities;
 using Payment.Domain.Repositories;
+using FraudDeclinedException = Payment.Application.Exceptions.FraudDeclinedException;
 
 namespace Payment.Api.Endpoints;
 
@@ -28,6 +29,7 @@ public static class PaymentEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
@@ -126,7 +128,22 @@ public static class PaymentEndpoints
                     result.Status,
                     result.Provider,
                     result.ProviderReference,
-                    result.CreatedAtUtc));
+                    result.CreatedAtUtc,
+                    result.FraudDecision,
+                    result.FraudScore));
+        }
+        catch (FraudDeclinedException ex)
+        {
+            return Results.Problem(
+                title: "Payment declined by fraud screening",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "fraud_decline",
+                    ["score"] = ex.Score,
+                    ["rulesTriggered"] = ex.RulesTriggered
+                });
         }
         catch (PaymentProviderException ex)
         {

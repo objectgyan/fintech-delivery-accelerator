@@ -5,5 +5,7 @@ public sealed record CreatePaymentResponse(
     string Status,
     string Provider,
     string? ProviderReference,
-    DateTimeOffset CreatedAtUtc
+    DateTimeOffset CreatedAtUtc,
+    string? FraudDecision = null,
+    int? FraudScore = null
 );
