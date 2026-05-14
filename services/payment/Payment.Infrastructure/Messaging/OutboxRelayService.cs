@@ -1,4 +1,6 @@
+using System.Diagnostics.Metrics;
 using Azure.Messaging.ServiceBus;
+using Fintech.Observability.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -9,6 +11,11 @@ namespace Payment.Infrastructure.Messaging;
 
 internal sealed class OutboxRelayService : BackgroundService
 {
+    private static readonly Counter<long> PublishedCounter = FintechMeter.Instance.CreateCounter<long>(
+        "payment.outbox.published.count", description: "Outbox messages successfully published to Service Bus");
+    private static readonly Counter<long> PublishFailedCounter = FintechMeter.Instance.CreateCounter<long>(
+        "payment.outbox.publish_failed.count", description: "Outbox publish failures (transient + permanent)");
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ServiceBusClient _client;
     private readonly string _topicName;
@@ -88,11 +95,13 @@ internal sealed class OutboxRelayService : BackgroundService
 
                 await sender.SendMessageAsync(sbMessage, cancellationToken);
                 outboxMessage.MarkPublished();
+                PublishedCounter.Add(1, new KeyValuePair<string, object?>("event_type", outboxMessage.EventType));
                 _logger.LogInformation("OutboxRelay: published {EventType} {MessageId}", outboxMessage.EventType, outboxMessage.Id);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 outboxMessage.IncrementRetry();
+                PublishFailedCounter.Add(1);
                 if (outboxMessage.RetryCount >= MaxRetries)
                 {
                     outboxMessage.MarkFailed();

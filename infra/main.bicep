@@ -9,6 +9,9 @@ param location string = 'eastus'
 @description('Project prefix for resource naming')
 param projectPrefix string = 'fintech'
 
+@description('Email address that receives operational alerts')
+param alertEmail string = 'objectgyan@gmail.com'
+
 var resourceGroupName = '${projectPrefix}-${environment}-rg'
 var tags = {
   project: 'fintech-delivery-accelerator'
@@ -154,6 +157,19 @@ module acaFraud 'modules/aca-app.bicep' = {
       { name: 'ASPNETCORE_HTTP_PORTS', value: '8080' }
       { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
     ]
+  }
+}
+
+module alerts 'modules/alerts.bicep' = {
+  name: 'alerts'
+  scope: rg
+  params: {
+    namePrefix: '${projectPrefix}-${environment}'
+    location: location
+    alertEmail: alertEmail
+    appInsightsId: appInsights.outputs.resourceId
+    serviceBusNamespaceId: serviceBus.outputs.namespaceId
+    tags: tags
   }
 }
 
