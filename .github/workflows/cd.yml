@@ -75,3 +75,20 @@ jobs:
             --name ${{ secrets.ACA_NOTIFICATION_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --output table
+
+      - name: Deploy fraud service
+        run: |
+          az containerapp update \
+            --name ${{ secrets.ACA_FRAUD_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/fraud:${{ github.event.workflow_run.head_sha }} \
+            --set-env-vars \
+              "ASPNETCORE_HTTP_PORTS=8080" \
+              "APPLICATIONINSIGHTS_CONNECTION_STRING=${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}"
+
+      - name: Verify fraud revision
+        run: |
+          az containerapp revision list \
+            --name ${{ secrets.ACA_FRAUD_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --output table

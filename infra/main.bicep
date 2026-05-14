@@ -138,6 +138,25 @@ module acaNotification 'modules/aca-worker.bicep' = {
   }
 }
 
+module acaFraud 'modules/aca-app.bicep' = {
+  name: 'aca-fraud'
+  scope: rg
+  params: {
+    name: '${projectPrefix}-${environment}-fraud'
+    location: location
+    environmentId: acaEnv.outputs.environmentId
+    containerImage: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    ingressExternal: true
+    minReplicas: 0
+    maxReplicas: 3
+    tags: tags
+    envVars: [
+      { name: 'ASPNETCORE_HTTP_PORTS', value: '8080' }
+      { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.outputs.connectionString }
+    ]
+  }
+}
+
 output resourceGroupName string = resourceGroupName
 output acrLoginServer string = acr.outputs.loginServer
 output acrName string = acr.outputs.name
@@ -146,6 +165,8 @@ output acaUrl string = acaApp.outputs.url
 output acaPaymentAppName string = acaPayment.outputs.appName
 output acaPaymentUrl string = acaPayment.outputs.url
 output acaNotificationAppName string = acaNotification.outputs.appName
+output acaFraudAppName string = acaFraud.outputs.appName
+output acaFraudUrl string = acaFraud.outputs.url
 output appInsightsConnectionString string = appInsights.outputs.connectionString
 output keyVaultName string = keyVault.outputs.name
 output serviceBusNamespace string = serviceBus.outputs.namespaceName
