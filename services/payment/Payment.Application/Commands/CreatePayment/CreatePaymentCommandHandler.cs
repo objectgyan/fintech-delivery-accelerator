@@ -90,6 +90,9 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         var attemptNo = 1;
         var currentAttempt = PaymentAttempt.Start(payment.Id, attemptNo, "stripe");
 
+        // Same key on every retry so Stripe dedupes a charge whose response was lost in transit
+        var providerIdempotencyKey = $"payment-{payment.Id}";
+
         var retryPipeline = new ResiliencePipelineBuilder<ProviderResult>()
             .AddRetry(new RetryStrategyOptions<ProviderResult>
             {
@@ -127,7 +130,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             // Circuit breaker (singleton) wraps retry (per-request) — breaker trips after exhausted retry batches
             providerResult = await _circuitBreaker.ExecuteAsync(async ct =>
                 await retryPipeline.ExecuteAsync(
-                    async ct2 => await _provider.AuthorizeAsync(request.Amount, request.Currency, request.PaymentMethodToken, ct2),
+                    async ct2 => await _provider.AuthorizeAsync(request.Amount, request.Currency, request.PaymentMethodToken, providerIdempotencyKey, ct2),
                     ct),
                 cancellationToken);
         }

@@ -9,6 +9,13 @@ public sealed class StripePaymentProvider : IPaymentProvider
 {
     private readonly PaymentIntentService _paymentIntentService;
 
+    // https://docs.stripe.com/currencies#zero-decimal
+    private static readonly HashSet<string> ZeroDecimalCurrencies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
+        "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"
+    };
+
     public StripePaymentProvider(IConfiguration configuration)
     {
         var apiKey = configuration["Stripe:SecretKey"]
@@ -20,13 +27,14 @@ public sealed class StripePaymentProvider : IPaymentProvider
         decimal amount,
         string currency,
         string paymentMethodToken,
+        string idempotencyKey,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var options = new PaymentIntentCreateOptions
             {
-                Amount = (long)(amount * 100), // Stripe uses smallest currency unit (cents)
+                Amount = ToMinorUnits(amount, currency),
                 Currency = currency.ToLowerInvariant(),
                 PaymentMethod = paymentMethodToken,
                 Confirm = true,
@@ -37,7 +45,10 @@ public sealed class StripePaymentProvider : IPaymentProvider
                 }
             };
 
-            var intent = await _paymentIntentService.CreateAsync(options, cancellationToken: cancellationToken);
+            var intent = await _paymentIntentService.CreateAsync(
+                options,
+                new RequestOptions { IdempotencyKey = idempotencyKey },
+                cancellationToken);
 
             return intent.Status == "succeeded"
                 ? new ProviderResult(true, intent.Id, null, null, false)
@@ -51,5 +62,12 @@ public sealed class StripePaymentProvider : IPaymentProvider
         {
             return new ProviderResult(false, null, ex.StripeError?.Code, ex.StripeError?.Message ?? ex.Message, false);
         }
+    }
+
+    // Stripe expects the smallest currency unit; round rather than truncate (19.999 -> 2000, not 1999)
+    internal static long ToMinorUnits(decimal amount, string currency)
+    {
+        var factor = ZeroDecimalCurrencies.Contains(currency) ? 1m : 100m;
+        return (long)Math.Round(amount * factor, MidpointRounding.AwayFromZero);
     }
 }
