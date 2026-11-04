@@ -57,6 +57,15 @@ jobs:
       - name: Test
         run: dotnet test tests/unit/Fraud.Tests/Fraud.Tests.csproj -c Release --verbosity normal
 
+      # PRs build images without pushing, so Dockerfile breakage shows up before merge
+      - name: Docker Build (verify only)
+        if: github.ref != 'refs/heads/main'
+        run: |
+          docker build -t placeholder:ci services/placeholder
+          docker build -t payment:ci -f services/payment/Dockerfile .
+          docker build -t notification:ci -f services/notification/Dockerfile .
+          docker build -t fraud:ci -f services/fraud/Dockerfile .
+
       - name: Azure Login (OIDC)
         if: github.ref == 'refs/heads/main'
         uses: azure/login@v2
@@ -83,7 +92,7 @@ jobs:
         run: |
           docker build -t ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:${{ github.sha }} \
                        -t ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:latest \
-                       services/payment
+                       -f services/payment/Dockerfile .
           docker push ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:${{ github.sha }}
           docker push ${{ env.REGISTRY }}/${{ env.PAYMENT_IMAGE }}:latest
 
@@ -92,7 +101,7 @@ jobs:
         run: |
           docker build -t ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:${{ github.sha }} \
                        -t ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:latest \
-                       services/notification
+                       -f services/notification/Dockerfile .
           docker push ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:${{ github.sha }}
           docker push ${{ env.REGISTRY }}/${{ env.NOTIFICATION_IMAGE }}:latest
 
@@ -101,6 +110,6 @@ jobs:
         run: |
           docker build -t ${{ env.REGISTRY }}/${{ env.FRAUD_IMAGE }}:${{ github.sha }} \
                        -t ${{ env.REGISTRY }}/${{ env.FRAUD_IMAGE }}:latest \
-                       services/fraud
+                       -f services/fraud/Dockerfile .
           docker push ${{ env.REGISTRY }}/${{ env.FRAUD_IMAGE }}:${{ github.sha }}
           docker push ${{ env.REGISTRY }}/${{ env.FRAUD_IMAGE }}:latest
