@@ -6,5 +6,6 @@ public interface IPaymentProvider
         decimal amount,
         string currency,
         string paymentMethodToken,
+        string idempotencyKey,
         CancellationToken cancellationToken = default);
 }

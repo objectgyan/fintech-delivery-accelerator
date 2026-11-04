@@ -30,6 +30,7 @@ internal sealed class SimulatedPaymentProvider : IPaymentProvider
         decimal amount,
         string currency,
         string paymentMethodToken,
+        string idempotencyKey,
         CancellationToken cancellationToken = default)
     {
         var callNo = Interlocked.Increment(ref _callCount);
@@ -52,6 +53,6 @@ internal sealed class SimulatedPaymentProvider : IPaymentProvider
             "[SIMULATION] Call {CallNo} passes through to real provider (simulation exhausted after {FailCount} failures)",
             callNo, _failCount);
 
-        return await _inner.AuthorizeAsync(amount, currency, paymentMethodToken, cancellationToken);
+        return await _inner.AuthorizeAsync(amount, currency, paymentMethodToken, idempotencyKey, cancellationToken);
     }
 }
